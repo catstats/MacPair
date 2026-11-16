@@ -13,7 +13,7 @@ MacPair is a native Swift macOS app. Its default UI language is English; Simplif
 
 ## Build and validate
 
-Use ./scripts/build.sh for a universal arm64/x86_64 App; --native builds only this Mac's architecture. Run ./scripts/test.sh for local protocol, TLS, sizing, and real H.264 checks when those components change. The optional --display flag temporarily creates and removes a virtual screen. Preview UI changes with ./scripts/preview.sh; --searching and --mirror cover the added UI states. Package with ./scripts/package.sh. MACPAIR_BUILD_ROOT optionally overrides the generated-app/cache directory; MACPAIR_APP_PATH overrides the app path.
+Use ./scripts/build.sh for a universal arm64/x86_64 App; --native builds only this Mac's architecture. Run ./scripts/test.sh for local protocol, TLS, sizing, and real H.264 checks when those components change. The optional --display flag temporarily creates and removes a virtual screen. Preview UI changes with ./scripts/preview.sh; --searching, --mirror and --viewer cover the added UI states. The --display tests briefly enter full screen and must run with existing MacPair display sessions disconnected. Package with ./scripts/package.sh. MACPAIR_BUILD_ROOT optionally overrides the generated-app/cache directory; MACPAIR_APP_PATH overrides the app path.
 
 Keep local.macpair.prototype stable for macOS permission continuity. Mirror captures the existing main display. Extend creates and later removes a CGVirtualDisplay. Preserve that distinction and cleanup behavior. The transport currently restricts connections to discovered AWDL interfaces.
 

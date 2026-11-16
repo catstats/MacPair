@@ -7,15 +7,17 @@ import CoreGraphics
 enum MacRole: String, CaseIterable { case host = "Host Mac", receiver = "Display Mac" }
 
 @MainActor
-final class AppModel: ObservableObject {
+final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     @Published var language = L10n.language {
         didSet {
             L10n.setLanguage(language)
             viewerWindow?.title = L("MacPair Display · Double-click to toggle full screen")
+            updateViewerHUD()
         }
     }
     @Published var role: MacRole = .host
     @Published var displayMode: DisplayMode = .extend
+    @Published var resolution: ResolutionPreset = .recommended
     @Published var peers: [DiscoveredPeer] = []
     @Published var selectedID: String?
     @Published var enteredCode = ""
@@ -49,6 +51,10 @@ final class AppModel: ObservableObject {
     private let samples = H264Samples()
     private let displayLayer = AVSampleBufferDisplayLayer()
     private var viewerWindow: NSWindow?
+    private var viewerEnteredFullScreen = false
+    private var viewerFullScreenFailed = false
+    private var receivedWidth = 0
+    private var receivedHeight = 0
     private var helloDeadline: DispatchWorkItem?
     private let serviceName = "MacPair · " + (Host.current().localizedName ?? "Mac")
     var selectedPeer: DiscoveredPeer? { peers.first { $0.id == selectedID } }
@@ -156,8 +162,9 @@ final class AppModel: ObservableObject {
                 height = size.height
             }
             requestedHello = SessionHello(version: Wire.version,
-                mode: testOnly ? "diagnostic" : displayMode.rawValue, width: width, height: height, fps: 30)
-            try requestedHello?.validate()
+                mode: testOnly ? "diagnostic" : displayMode.rawValue, width: width, height: height, fps: 30,
+                resolution: !testOnly && displayMode == .extend ? resolution : .recommended)
+            try requestedHello?.validateRequest()
         } catch { status = error.appMessage; return }
         connecting = true
         status = "Establishing an encrypted connection over \(interface.name)…"
@@ -211,33 +218,37 @@ final class AppModel: ObservableObject {
         case .hello:
             guard role == .receiver, activeHello == nil else { throw PairError.message("Invalid session sequence") }
             let hello = try JSONDecoder().decode(SessionHello.self, from: packet.body)
-            try hello.validate()
-            activeHello = hello
+            try hello.validateRequest()
+            activeHello = hello // Reserve this handshake while full screen settles.
             diagnostic = hello.mode == "diagnostic"
-            link.send(.ready, try JSONEncoder().encode(hello))
-            sessionReady()
             if diagnostic {
+                link.send(.ready, try JSONEncoder().encode(hello))
+                sessionReady()
                 status = "Connection test passed. Disconnect on the host, choose Mirror or Extend, then start streaming."
             } else {
-                status = hello.mode == "mirror" ? "Connected. Waiting for the mirrored screen…" : "Connected. Waiting for the extended desktop…"
+                prepareReceiver(link: link, request: hello, token: token)
             }
-            if !diagnostic { showViewer() }
         case .ready:
             guard role == .host, activeHello == nil, let requestedHello else {
                 throw PairError.message("Invalid session sequence")
             }
             let hello = try JSONDecoder().decode(SessionHello.self, from: packet.body)
-            try hello.validate()
-            guard hello == requestedHello else { throw PairError.message("The display returned incompatible parameters") }
+            try hello.validateResponse(to: requestedHello)
             activeHello = hello
+            logDimensions(hello)
             sessionReady()
             if diagnostic { status = "AWDL connection test passed. Round-trip time is shown below."; log("Peer-to-peer session handshake completed") }
             else { beginStreaming(link: link, hello: hello, token: token) }
         case .format:
-            guard role == .receiver, connected, activeHello?.isVideo == true else {
+            guard role == .receiver, connected, let hello = activeHello, hello.isVideo else {
                 throw PairError.message("Video session has not been negotiated")
             }
-            try samples.configure(packet.body)
+            try samples.configure(packet.body, expectedWidth: hello.width, expectedHeight: hello.height)
+            if let format = samples.format {
+                let size = CMVideoFormatDescriptionGetDimensions(format)
+                receivedWidth = Int(size.width); receivedHeight = Int(size.height)
+                updateViewerHUD()
+            }
         case .video:
             guard role == .receiver, connected, activeHello?.isVideo == true else {
                 throw PairError.message("Video session has not been negotiated")
@@ -259,6 +270,73 @@ final class AppModel: ObservableObject {
         case .ping, .pong: break // Handled by the transport.
         }
     }
+    private func prepareReceiver(link: PeerLink, request: SessionHello, token: UUID) {
+        status = "Matching the display Mac's resolution…"
+        setupTask = Task { [weak self, weak link] in
+            guard let self, let link else { return }
+            do {
+                let info = try await self.prepareViewer()
+                guard self.sessionID == token else { return }
+                let hello = try request.negotiated(for: info)
+                self.activeHello = hello
+                self.logDimensions(hello)
+                link.send(.ready, try JSONEncoder().encode(hello))
+                self.sessionReady()
+                self.updateViewerHUD()
+                self.status = hello.mode == "mirror" ? "Connected. Waiting for the mirrored screen…" : "Connected. Waiting for the extended desktop…"
+            } catch {
+                guard self.sessionID == token else { return }
+                link.send(.failure, Data(error.localizedDescription.utf8))
+                self.endSession(reason: error.appMessage)
+            }
+        }
+    }
+    func prepareViewer() async throws -> ReceiverDisplayInfo {
+        showViewer(fullscreen: true)
+        // Wait for AppKit's completion notification, not the style bit that
+        // changes at the start of the full-screen animation.
+        for _ in 0..<70 {
+            try Task.checkCancellation()
+            if viewerEnteredFullScreen || viewerFullScreenFailed { break }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        try Task.checkCancellation()
+        guard viewerEnteredFullScreen, let view = viewerWindow?.contentView as? NativeVideoView else {
+            throw PairError.message("Cannot enter full screen on the display Mac. Close other full-screen windows and reconnect.")
+        }
+        view.layoutSubtreeIfNeeded()
+        return try view.displayInfo()
+    }
+    private func logDimensions(_ hello: SessionHello) {
+        guard let info = hello.receiver else { return }
+        let s = info.screen, v = info.viewport
+        log("Receiver \(info.name): \(s.logicalWidth) × \(s.logicalHeight) pt, \(s.backingWidth) × \(s.backingHeight) px, \(s.scale)×")
+        log("Full-screen viewport: \(v.logicalWidth) × \(v.logicalHeight) pt, \(v.backingWidth) × \(v.backingHeight) px")
+        if let canvas = hello.canvas {
+            log("Desktop: \(canvas.width) × \(canvas.height) pt at \(canvas.scale)×; stream: \(hello.width) × \(hello.height) px")
+        }
+    }
+    private func updateViewerHUD() {
+        guard let view = viewerWindow?.contentView as? NativeVideoView, let hello = activeHello else { return }
+        let stream: LocalizedMessage = receivedWidth > 0
+            ? "Stream \(receivedWidth) × \(receivedHeight) px · \(fps) fps"
+            : "Waiting for video…"
+        if let canvas = hello.canvas {
+            view.setHUD(L("Desktop \(canvas.width) × \(canvas.height) pt · \(canvas.scale)×") + "\n" + stream.localized)
+        } else { view.setHUD(L10n.text("Mirror") + "\n" + stream.localized) }
+    }
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === viewerWindow else { return }
+        viewerEnteredFullScreen = true
+    }
+    func windowDidExitFullScreen(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === viewerWindow else { return }
+        viewerEnteredFullScreen = false
+    }
+    func windowDidFailToEnterFullScreen(_ window: NSWindow) {
+        guard window === viewerWindow else { return }
+        viewerFullScreenFailed = true
+    }
     private func sessionReady() {
         helloDeadline?.cancel()
         connecting = false
@@ -271,20 +349,26 @@ final class AppModel: ObservableObject {
                 guard let self, self.connected else { return }
                 self.fps = self.framesThisSecond
                 self.framesThisSecond = 0
+                self.updateViewerHUD()
             }
         }
         statsTimer = timer
         RunLoop.main.add(timer, forMode: .common)
     }
     private func beginStreaming(link: PeerLink, hello: SessionHello, token: UUID) {
-        status = hello.mode == "mirror" ? "Preparing the host's main screen for mirroring…" : "Creating a 1280 × 800 extended desktop…"
+        status = hello.mode == "mirror" ? "Preparing the host's main screen for mirroring…" : "Creating a Retina-aware extended desktop…"
         let mirrorSourceID = mirrorDisplayID
         setupTask = Task { [weak self, weak link] in
             guard let self, let link else { return }
             do {
                 let captureID: CGDirectDisplayID
                 if hello.mode == "extend" {
-                    let screen = try VirtualScreen(width: hello.width, height: hello.height)
+                    guard let canvas = hello.canvas else { throw PairError.message("The display returned incompatible parameters") }
+                    let screen = try VirtualScreen(width: canvas.width, height: canvas.height, scale: canvas.scale)
+                    screen.onError = { [weak self] message in
+                        guard let self, self.sessionID == token else { return }
+                        self.endSession(reason: message)
+                    }
                     self.screen = screen
                     try await screen.arrange()
                     captureID = screen.id
@@ -305,6 +389,12 @@ final class AppModel: ObservableObject {
                         self.endSession(reason: "Screen streaming failed: \(text)")
                     }
                 }
+                streamer.onCaptureInfo = { [weak self] message in
+                    DispatchQueue.main.async {
+                        guard let self, self.sessionID == token else { return }
+                        self.log(message)
+                    }
+                }
                 streamer.onSent = { [weak self] in
                     DispatchQueue.main.async {
                         guard let self, self.sessionID == token else { return }
@@ -318,7 +408,7 @@ final class AppModel: ObservableObject {
                     self.log("Mirror source \(captureID): \(hello.width) × \(hello.height), H.264 up to \(hello.fps) fps")
                 } else {
                     self.status = "Extended desktop is ready. Drag a window past the host desktop's right edge."
-                    self.log("Virtual display \(captureID): 1280 × 800, extended desktop, H.264 up to 30 fps")
+                    self.log("Virtual display \(captureID): \(hello.width) × \(hello.height) pixels, H.264 up to \(hello.fps) fps")
                 }
             } catch {
                 if self.sessionID == token { self.endSession(reason: error.appMessage) }
@@ -341,9 +431,14 @@ final class AppModel: ObservableObject {
         activeHello = nil
         requestedHello = nil
         mirrorDisplayID = nil
+        receivedWidth = 0; receivedHeight = 0
         displayLayer.flushAndRemoveImage()
+        samples.reset()
+        viewerWindow?.delegate = nil
         viewerWindow?.close()
         viewerWindow = nil
+        viewerEnteredFullScreen = false
+        viewerFullScreenFailed = false
         let oldTask = setupTask
         let oldStreamer = streamer
         let oldScreen = screen
@@ -393,22 +488,29 @@ final class AppModel: ObservableObject {
     func showViewer(fullscreen: Bool = false) {
         if viewerWindow == nil {
             displayLayer.videoGravity = .resizeAspect
+            let targetScreen = NSApp.keyWindow?.screen ?? NSScreen.main
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 600),
-                styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+                styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false, screen: targetScreen)
             window.title = L("MacPair Display · Double-click to toggle full screen")
             window.isReleasedWhenClosed = false
             window.collectionBehavior = [.fullScreenPrimary]
+            window.delegate = self
             window.contentView = NativeVideoView(videoLayer: displayLayer)
             window.center()
             viewerWindow = window
+            viewerEnteredFullScreen = false
+            viewerFullScreenFailed = false
         }
         viewerWindow?.makeKeyAndOrderFront(nil)
+        if fullscreen { NSApp.activate(ignoringOtherApps: true) }
         if fullscreen, viewerWindow?.styleMask.contains(.fullScreen) == false {
+            viewerFullScreenFailed = false
             viewerWindow?.toggleFullScreen(nil)
         }
+        updateViewerHUD()
     }
     func copyDiagnostics() {
-        let text = (["MacPair 0.1.4", ProcessInfo.processInfo.operatingSystemVersionString,
+        let text = (["MacPair 0.1.5", ProcessInfo.processInfo.operatingSystemVersionString,
                      L10n.text(role.rawValue), status.localized, path.localized, "RTT \(rtt), frames \(totalFrames), fps \(fps)"] + events.map(\.localized)).joined(separator: "\n")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
@@ -417,12 +519,47 @@ final class AppModel: ObservableObject {
 
 final class NativeVideoView: NSView {
     private let videoLayer: AVSampleBufferDisplayLayer
+    private let hud = NSTextField(wrappingLabelWithString: "")
+    private let hudBackground = NSVisualEffectView()
     init(videoLayer: AVSampleBufferDisplayLayer) {
         self.videoLayer = videoLayer
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
         layer?.addSublayer(videoLayer)
+        hudBackground.material = .hudWindow
+        hudBackground.appearance = NSAppearance(named: .vibrantDark)
+        hudBackground.blendingMode = .withinWindow
+        hudBackground.state = .active
+        hudBackground.wantsLayer = true
+        hudBackground.layer?.cornerRadius = 7
+        hudBackground.layer?.masksToBounds = true
+        hud.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        hud.textColor = .white
+        hud.isSelectable = false
+        hudBackground.addSubview(hud)
+        addSubview(hudBackground)
+        hudBackground.isHidden = true
+    }
+    func setHUD(_ text: String) {
+        hud.stringValue = text
+        hudBackground.isHidden = text.isEmpty
+        needsLayout = true
+    }
+    func displayInfo() throws -> ReceiverDisplayInfo {
+        guard let screen = window?.screen else {
+            throw PairError.message("Cannot read the display Mac's screen settings")
+        }
+        func geometry(_ logical: NSSize, _ backing: NSSize) -> DisplayGeometry {
+            DisplayGeometry(logicalWidth: Int(logical.width.rounded()), logicalHeight: Int(logical.height.rounded()),
+                backingWidth: Int(backing.width.rounded()), backingHeight: Int(backing.height.rounded()),
+                scale: Int(screen.backingScaleFactor.rounded()))
+        }
+        let info = ReceiverDisplayInfo(name: String(screen.localizedName.prefix(80)),
+            screen: geometry(screen.frame.size, screen.convertRectToBacking(screen.frame).size),
+            viewport: geometry(bounds.size, convertToBacking(bounds).size))
+        try info.validate()
+        return info
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func layout() {
@@ -431,6 +568,9 @@ final class NativeVideoView: NSView {
         CATransaction.setDisableActions(true)
         videoLayer.frame = bounds
         CATransaction.commit()
+        let size = hud.sizeThatFits(NSSize(width: max(0, bounds.width - 56), height: 70))
+        hudBackground.frame = NSRect(x: 16, y: 16, width: size.width + 20, height: size.height + 14)
+        hud.frame = NSRect(x: 10, y: 7, width: size.width, height: size.height)
     }
     override var acceptsFirstResponder: Bool { true }
     override func viewDidMoveToWindow() {

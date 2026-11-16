@@ -2,7 +2,7 @@
 
 Extend your desktop onto a nearby Mac, or mirror your main screen. The user has confirmed that the two-Mac display works when the Macs are connected to different Wi-Fi networks.
 
-**Prototype 0.1.4. English is the default; switch to 简体中文 from the language menu.** [中文说明](README.zh-CN.md)
+**Prototype 0.1.5. English is the default; switch to 简体中文 from the language menu.** [中文说明](README.zh-CN.md)
 
 The local protocol, TLS, H.264, and virtual-display checks have passed on the development Mac. **User report on 2026-11-16: virtual display and operation across different Wi-Fi networks passed. The user-described “no Wi-Fi” scenario did not work; whether the Wi-Fi radio was off or merely disconnected was not specified.** Standalone operation without an access point remains unconfirmed. See [test instructions and verification record](TESTING.md).
 
@@ -10,7 +10,7 @@ The local protocol, TLS, H.264, and virtual-display checks have passed on the de
 
 Double-click `Start MacPair.command`. In an iCloud checkout the runnable App is kept in this Mac's local cache; the launcher finds it automatically. Outside iCloud, the default App path is `build/MacPair.app`.
 
-To use a second Mac, copy `build/MacPair-0.1.4.zip` to it, unzip it, and open MacPair.app. The package includes the full source. The second Mac does not need Xcode.
+To use a second Mac, copy `build/MacPair-0.1.5.zip` to it, unzip it, and open MacPair.app. The package includes the full source. The second Mac does not need Xcode.
 
 Requirements: macOS 13 or later on both Macs, with compatible Apple peer-to-peer Wi-Fi hardware. The app is a universal arm64/x86_64 build. Both architectures have been compiled; the processor and OS versions of the user-tested pair were not separately recorded.
 
@@ -30,16 +30,30 @@ This test requires no Screen Recording permission and creates no virtual screen.
 
 ## Choose Mirror or Extend
 
-Install **0.1.4 on both Macs**. On the host, choose the mode before starting:
+Install **0.1.5 on both Macs**. On the host, choose the mode before starting:
 
 | Mode | What the display Mac shows | Start button |
 | --- | --- | --- |
 | **Mirror** | The host's existing main screen, scaled to fit while keeping its aspect ratio | **Mirror display** |
-| **Extend** | A new independent 1280 × 800 desktop | **Extend display** |
+| **Extend** | An independent desktop matched to the display Mac, with 1×/2× scaling | **Extend display** |
 
 To change modes, disconnect, choose the other mode, and reconnect. The display Mac accepts either mode automatically.
 
 Mirror uses ScreenCaptureKit to capture the existing main display. It does not create a virtual monitor. Extend uses the experimental virtual-display API described below.
+
+## Display resolution (Extend)
+
+Both Macs must run **0.1.5**; the sizing handshake uses protocol v2. Choose the resolution on the host before connecting:
+
+| Setting | Desktop space | Text size on the receiver |
+| --- | --- | --- |
+| **Larger Text** | About 80% of the default logical dimensions | Larger |
+| **Default (Recommended)** | Matches the receiver's full-screen logical viewport | Matches its macOS scaling |
+| **More Space** | About 125% of the default logical dimensions | Smaller |
+
+The receiver overlay shows the virtual desktop in points, its 1×/2× scale, the actual H.264 stream pixels and received FPS. Copy Diagnostics on either Mac for the receiver's screen/viewport dimensions and capture/encoder sizes. Disconnect and reconnect after changing the preset, the receiving screen or macOS display scaling. Exiting full screen keeps the negotiated resolution and fits it into the window.
+
+This prototype accepts up to 5120 pixels on either stream axis and 16 megapixels in total. Actual codec support depends on the Mac; choose Larger Text if the requested size is rejected. This limit is explicit, with no hidden fallback to the old 1280 × 800 desktop.
 
 ## Then test the extended desktop
 
@@ -47,9 +61,9 @@ Mirror uses ScreenCaptureKit to capture the existing main display. It does not c
 2. Click **Grant Screen Recording**. Allow MacPair in System Settings, then **quit and reopen the same app**. Screen Recording is only needed on the host.
 3. Search again, select the display Mac, and enter its current code.
 4. Choose **Extend**, then click **Extend display**.
-5. A 1280 × 800 independent desktop appears to the right of the host's desktop.
+5. An independent desktop matching the display Mac appears to the right of the host's desktop.
 6. Drag a normal window past the host desktop's right edge. It should appear on the display Mac.
-7. Double-click the video window for full screen. Press **Esc** to exit full screen.
+7. The display opens in full screen automatically. Double-click or press **Esc** to exit full screen.
 8. Use **Arrange displays** on the host to change the display position.
 
 Use the **host's** keyboard, mouse, and trackpad to operate the extended desktop. This version does not forward input from the display Mac or transmit audio.
@@ -76,7 +90,7 @@ No downloaded packages, cloud services, or paid developer account are needed. Th
 ./scripts/build.sh             # universal arm64 + x86_64 app
 ./scripts/build.sh --native    # faster, current architecture only
 ./scripts/test.sh              # real local TLS and H.264 checks
-./scripts/test.sh --display    # also create/remove a real virtual display
+./scripts/test.sh --display    # real 1×/2× displays + temporary fullscreen sizing check
 ./scripts/preview.sh           # render English/Chinese UI layout fixtures
 ./scripts/package.sh           # app + guides + complete source
 ```
@@ -98,7 +112,9 @@ Virtual display → ScreenCaptureKit → H.264
 
 Extend-mode virtual-screen creation uses the **non-public CGVirtualDisplay API**. It works in the local test environment, but a macOS update may change compatibility. This is an experimental sideloaded app, not a promise of App Store availability.
 
-Extend is fixed at 1280 × 800, 1× scaling. Mirror scales the main screen to fit within 1280 × 800 while keeping its aspect ratio, including portrait and ultrawide screens. Both target up to 30 fps. Retina, adaptive bitrate, audio, display-side input, multiple receivers, and automatic reconnection are outside this prototype.
+Extend negotiates the receiver's logical screen size, backing pixels, scale and actual full-screen viewport before creating its virtual display. A Retina receiver gets a 2× HiDPI desktop and matching H.264 pixel dimensions. Default avoids an extra video resize when its measured viewport has even backing dimensions. Notched displays use the content area measured after full-screen entry. At 1×, odd dimensions round to the nearest even pixel for H.264. The viewer always preserves aspect ratio.
+
+Mirror retains its aspect-preserving 1280 × 800 capture limit and creates no virtual display. Both modes target up to 30 fps. Extend's encoder bitrate scales with resolution (8–45 Mbps); this is a resolution-based budget, not a congestion controller. Audio, display-side input, multiple receivers and automatic reconnection are outside this prototype.
 
 ## Troubleshooting
 

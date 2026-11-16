@@ -7,4 +7,5 @@ if [[ ! -x "$app_binary" ]]; then ./scripts/build.sh --native; fi
 "$app_binary" --self-test
 if [[ "${1:-}" == "--display" ]]; then
     "$app_binary" --display-smoke-test
+    "$app_binary" --receiver-smoke-test
 fi

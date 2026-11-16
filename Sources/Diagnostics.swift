@@ -28,11 +28,14 @@ enum DiagnosticTests {
             print("PASS: session version, dimensions and mode validation")
             try mirrorDimensions()
             print("PASS: Mirror/Extend negotiation and aspect-preserving screen sizes")
+            try retinaNegotiation()
+            print("PASS: receiver logical/backing sizing, 1×/2× presets and tampered-handshake rejection")
             try encryptedLoopback()
             print("PASS: real TLS-PSK loopback, 512 KB payload and wrong-code rejection")
             try videoRoundtrip()
             try videoRoundtrip(width: 1230, height: 800)
-            print("PASS: real H.264 encode/decode, including non-macroblock-aligned mirror frames")
+            try videoRoundtrip(width: 2560, height: 1664)
+            print("PASS: real H.264 encode/decode at 320×200, 1230×800 and Retina 2560×1664")
             print("Local tests passed. Two-Mac AWDL and ScreenCaptureKit capture are NOT covered by loopback.")
             exit(0)
         } catch {
@@ -78,14 +81,14 @@ enum DiagnosticTests {
         }
     }
     private static func handshakeValidation() throws {
-        let hello = SessionHello(version: 1, mode: "extend", width: 1280, height: 800, fps: 30)
+        let hello = SessionHello(version: Wire.version, mode: "extend", width: 1280, height: 800, fps: 30)
         try hello.validate()
         let decoded = try JSONDecoder().decode(SessionHello.self, from: JSONEncoder().encode(hello))
         try expect(decoded == hello, "会话编码失败")
         for invalid in [
-            SessionHello(version: 2, mode: "extend", width: 1280, height: 800, fps: 30),
-            SessionHello(version: 1, mode: "extend", width: 1281, height: 800, fps: 30),
-            SessionHello(version: 1, mode: "unknown", width: 1280, height: 800, fps: 30)
+            SessionHello(version: Wire.version + 1, mode: "extend", width: 1280, height: 800, fps: 30),
+            SessionHello(version: Wire.version, mode: "extend", width: 1281, height: 800, fps: 30),
+            SessionHello(version: Wire.version, mode: "unknown", width: 1280, height: 800, fps: 30)
         ] {
             var rejected = false
             do { try invalid.validate() } catch { rejected = true }
@@ -125,6 +128,62 @@ enum DiagnosticTests {
         var rejected = false
         do { _ = try MirrorSizing.dimensions(width: 0, height: 100) } catch { rejected = true }
         try expect(rejected, "An unavailable source screen was accepted")
+    }
+    private static func retinaNegotiation() throws {
+        func info(_ width: Int, _ height: Int, _ scale: Int) -> ReceiverDisplayInfo {
+            let geometry = DisplayGeometry(logicalWidth: width, logicalHeight: height,
+                backingWidth: width * scale, backingHeight: height * scale, scale: scale)
+            return ReceiverDisplayInfo(name: "Fixture", screen: geometry, viewport: geometry)
+        }
+        let retina = info(1280, 832, 2)
+        for (preset, expected) in [
+            (ResolutionPreset.recommended, VirtualCanvas(width: 1280, height: 832, scale: 2)),
+            (.largerText, VirtualCanvas(width: 1024, height: 666, scale: 2)),
+            (.moreSpace, VirtualCanvas(width: 1600, height: 1040, scale: 2))
+        ] {
+            let request = SessionHello(version: Wire.version, mode: "extend", width: 1280, height: 800, fps: 30, resolution: preset)
+            let response = try request.negotiated(for: retina)
+            try expect(response.canvas == expected && response.width == expected.pixelWidth && response.height == expected.pixelHeight,
+                       "Retina preset lost logical/backing dimensions")
+            let decoded = try JSONDecoder().decode(SessionHello.self, from: JSONEncoder().encode(response))
+            try decoded.validateResponse(to: request)
+            let tampered = SessionHello(version: Wire.version, mode: "extend", width: 1280, height: 800,
+                fps: 30, resolution: preset, receiver: retina, canvas: expected)
+            var rejected = false
+            do { try tampered.validateResponse(to: request) } catch { rejected = true }
+            try expect(rejected, "A response with mismatched encoded pixels was accepted")
+        }
+        for display in [info(1920, 1080, 1), info(901, 1601, 1), info(1720, 720, 2)] {
+            let canvas = try ResolutionSizing.canvas(for: display, preset: .recommended)
+            try expect(abs(Double(canvas.width) / Double(canvas.height)
+                - Double(display.viewport.logicalWidth) / Double(display.viewport.logicalHeight)) < 0.003,
+                "Receiver aspect ratio was not preserved")
+            try expect(canvas.pixelWidth % 2 == 0 && canvas.pixelHeight % 2 == 0, "H.264 needs even dimensions")
+        }
+        let screen = DisplayGeometry(logicalWidth: 1280, logicalHeight: 864, backingWidth: 2560, backingHeight: 1728, scale: 2)
+        let notched = ReceiverDisplayInfo(name: "Notched screen", screen: screen, viewport: retina.viewport)
+        let notchCanvas = try ResolutionSizing.canvas(for: notched, preset: .recommended)
+        try expect(notchCanvas.height == 832, "Fullscreen content must use its measured viewport, not the notch area")
+        for mode in ["mirror", "diagnostic"] {
+            let request = SessionHello(version: Wire.version, mode: mode, width: 1230, height: 800, fps: 30)
+            let response = try request.negotiated(for: retina)
+            try response.validateResponse(to: request)
+            try expect(response.width == 1230 && response.height == 800 && response.canvas == nil,
+                       "Mirror/diagnostic dimensions changed during receiver negotiation")
+        }
+        for display in [info(1280, 832, 3), info(8192, 8192, 2),
+                        ReceiverDisplayInfo(name: "Bad backing", screen: screen,
+                            viewport: DisplayGeometry(logicalWidth: 1280, logicalHeight: 832,
+                                backingWidth: 1280, backingHeight: 832, scale: 2))] {
+            var rejected = false
+            do { _ = try ResolutionSizing.canvas(for: display, preset: .moreSpace) } catch { rejected = true }
+            try expect(rejected, "Invalid or oversized receiver dimensions were accepted")
+        }
+        let legacy = Data(#"{"version":1,"mode":"extend","width":1280,"height":800,"fps":30}"#.utf8)
+        let decoded = try JSONDecoder().decode(SessionHello.self, from: legacy)
+        var rejected = false
+        do { try decoded.validateRequest() } catch { rejected = true }
+        try expect(rejected, "A legacy peer must be told to update")
     }
     private static func encryptedLoopback() throws {
         let callbackQueue = DispatchQueue(label: "MacPair.tests")
@@ -210,7 +269,11 @@ enum DiagnosticTests {
         if let encodeError { throw PairError.message(encodeError) }
         guard let configuration, let video else { throw PairError.message("没有 H.264 输出") }
         let samples = H264Samples()
-        try samples.configure(configuration)
+        try samples.configure(configuration, expectedWidth: width, expectedHeight: height)
+        var mismatchRejected = false
+        do { try samples.configure(configuration, expectedWidth: width + 2, expectedHeight: height) }
+        catch { mismatchRejected = true }
+        try expect(mismatchRejected, "A stream with dimensions different from its handshake was accepted")
         let sample = try samples.sample(video)
         let probe = DecodeProbe()
         var record = VTDecompressionOutputCallbackRecord(decompressionOutputCallback: { context, _, status, _, image, _, _ in
@@ -248,31 +311,71 @@ enum DiagnosticTests {
     }
 
     @MainActor
+    static func receiverSmokeTest() -> Never {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.finishLaunching()
+        let model = AppModel()
+        Task { @MainActor in
+            do {
+                let info = try await model.prepareViewer()
+                let canvas = try ResolutionSizing.canvas(for: info, preset: .recommended)
+                try expect(canvas.pixelWidth == info.viewport.backingWidth
+                    && canvas.pixelHeight == info.viewport.backingHeight,
+                    "Default must match the actual full-screen backing dimensions")
+                print("PASS: actual AppKit full-screen receiver: screen \(info.screen.logicalWidth)×\(info.screen.logicalHeight) pt, viewport \(info.viewport.logicalWidth)×\(info.viewport.logicalHeight) pt, backing \(info.viewport.backingWidth)×\(info.viewport.backingHeight) px @\(info.viewport.scale)×")
+                model.endSession()
+                // Let AppKit finish closing its full-screen window before exit.
+                try await Task.sleep(nanoseconds: 500_000_000)
+                exit(0)
+            } catch {
+                model.endSession()
+                fputs("FAIL: \(error.localizedDescription)\n", stderr)
+                exit(1)
+            }
+        }
+        app.run()
+        exit(1)
+    }
+
+    @MainActor
     static func displaySmokeTest() -> Never {
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
         Task { @MainActor in
             do {
-                var screen: VirtualScreen? = try VirtualScreen(width: 1280, height: 800)
-                let id = screen!.id
-                try await screen!.arrange()
-                try expect(VirtualScreen.isOnline(id) && CGDisplayIsInMirrorSet(id) == 0, "虚拟扩展屏未上线")
-                try expect(CGDisplayPixelsWide(id) == 1280 && CGDisplayPixelsHigh(id) == 800, "显示器尺寸不正确")
-                print("PASS: real virtual display created and extended: \(id), 1280x800")
-                screen?.close()
-                screen = nil
-                for _ in 0..<30 {
-                    if !VirtualScreen.isOnline(id) { break }
-                    try await Task.sleep(nanoseconds: 100_000_000)
+                let testSerial = UInt32.random(in: 0x4D50A000...0x4D50E000)
+                for (index, canvas) in [VirtualCanvas(width: 1280, height: 800, scale: 1),
+                                        VirtualCanvas(width: 1280, height: 832, scale: 2),
+                                        VirtualCanvas(width: 1024, height: 666, scale: 2),
+                                        VirtualCanvas(width: 1600, height: 1040, scale: 2)].enumerated() {
+                    // Separate identities cannot collide with the user's live session.
+                    var screen: VirtualScreen? = try VirtualScreen(width: canvas.width, height: canvas.height,
+                        scale: canvas.scale, serial: testSerial + UInt32(index))
+                    let id = screen!.id
+                    do {
+                        try await screen!.arrange()
+                        try expect(VirtualScreen.isOnline(id) && CGDisplayIsInMirrorSet(id) == 0, "虚拟扩展屏未上线")
+                        guard let mode = CGDisplayCopyDisplayMode(id) else { throw PairError.message("No current display mode") }
+                        try expect(mode.width == canvas.width && mode.height == canvas.height
+                            && mode.pixelWidth == canvas.pixelWidth && mode.pixelHeight == canvas.pixelHeight,
+                            "Virtual display logical/backing dimensions do not match")
+                        // Allow WindowServer's delayed saved-mode restore and the mode monitor to run.
+                        try await Task.sleep(nanoseconds: 2_300_000_000)
+                        guard let settled = CGDisplayCopyDisplayMode(id) else { throw PairError.message("Display mode disappeared") }
+                        try expect(settled.width == canvas.width && settled.pixelWidth == canvas.pixelWidth,
+                                   "The virtual screen reverted to a non-Retina mode")
+                        print("PASS: real extended display \(canvas.width)×\(canvas.height) pt @\(canvas.scale)× = \(canvas.pixelWidth)×\(canvas.pixelHeight) px")
+                    } catch { screen?.close(); throw error }
+                    screen?.close()
+                    screen = nil
+                    for _ in 0..<30 {
+                        if !VirtualScreen.isOnline(id) { break }
+                        try await Task.sleep(nanoseconds: 100_000_000)
+                    }
+                    try expect(!VirtualScreen.isOnline(id), "虚拟显示器未被移除")
+                    print("PASS: virtual display \(id) removed")
                 }
-                var online = [CGDirectDisplayID](repeating: 0, count: 32)
-                var count: UInt32 = 0
-                _ = CGGetOnlineDisplayList(32, &online, &count)
-                if CommandLine.arguments.contains("--trace") {
-                    print("TRACE online after removal: \(Array(online.prefix(Int(count)))) (target \(id), isOnline=\(CGDisplayIsOnline(id)))")
-                }
-                try expect(!online.prefix(Int(count)).contains(id), "虚拟显示器未被移除")
-                print("PASS: real virtual display removed on release")
                 exit(0)
             } catch { fputs("FAIL: \(error.localizedDescription)\n", stderr); exit(1) }
         }
@@ -285,8 +388,10 @@ enum DiagnosticTests {
 enum MacPairLauncher {
     @MainActor
     static func main() {
+        setbuf(stdout, nil)
         if CommandLine.arguments.contains("--self-test") { DiagnosticTests.run() }
         if CommandLine.arguments.contains("--display-smoke-test") { DiagnosticTests.displaySmokeTest() }
+        if CommandLine.arguments.contains("--receiver-smoke-test") { DiagnosticTests.receiverSmokeTest() }
         if CommandLine.arguments.contains("--mirror-smoke-test") { MirrorCaptureCheck.run() }
         MacPairApp.main()
     }

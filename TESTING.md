@@ -4,9 +4,33 @@ Version 0.1.1 adds a white highlight sweeping over the stationary gray searching
 
 [中文测试指南](TESTING.zh-CN.md) · [Quick start](README.md)
 
+## Version 0.1.5: Retina resolution acceptance
+
+Update **both Macs to 0.1.5**. Earlier versions cannot negotiate receiver geometry. On the host choose **Extend → Display resolution → Default (Recommended)** and connect. The receiver should enter full screen automatically.
+
+1. Read the receiver overlay: desktop points × 1×/2× should equal stream pixels. On a 1280 × 832 pt Retina viewport, Default should report 2560 × 1664 px.
+2. Compare a normal text window with the receiving Mac's own UI. Default should match its logical scaling, without stretched circles or clipped desktop edges.
+3. Disconnect, choose **Larger Text**, reconnect: text grows and desktop space decreases. Repeat with **More Space**: text shrinks and desktop space increases. The aspect ratio stays consistent, apart from at most two points of even-pixel rounding.
+4. Exit full screen, resize the viewer and re-enter full screen. The picture should fit without stretching; negotiated dimensions stay the same. Reconnect after changing macOS display scaling or the receiving screen.
+5. Disconnect and confirm the virtual screen disappears. Repeat Mirror to ensure it still shows the existing main screen and adds no monitor. Mirror retains its 1280 × 800 capture bound.
+6. If the result differs, use **Copy diagnostics on both Macs**. Record the model, macOS display scaling and which preset failed. Logs include screen/viewport points, backing pixels, virtual canvas, capture and encoder dimensions; the overlay reports parsed H.264 dimensions and FPS.
+
+Local 0.1.5 checks on 2026-11-16:
+
+- Receiver geometry validation, all three presets at 2×, odd 1× dimensions, portrait/ultrawide aspect ratios, notch viewport handling and size limits.
+- Protocol v2 JSON roundtrip; altered encoded dimensions, invalid backing sizes and legacy v1 rejected.
+- Actual H.264 encode/decode at 2560 × 1664, plus the existing 320 × 200 and 1230 × 800 checks. H.264 dimensions are checked against the negotiated session.
+- Actual virtual displays at 1280 × 800 @1×, 1280 × 832 @2×, 1024 × 666 @2× and 1600 × 1040 @2×. CoreGraphics reported the expected logical AND pixel sizes after settling; every display was removed.
+- Actual AppKit fullscreen measurement: 1920 × 1080 pt viewport, 3840 × 2160 backing pixels, 2×.
+- English/Chinese component layouts; the viewer HUD preview uses synthetic dimensions and no live video.
+
+Close existing MacPair display sessions before `./scripts/test.sh --display`. With the old session running, macOS rejected the additional display configuration (1014) and fullscreen entry; both checks passed after ending that session. The smoke check briefly creates displays and enters full screen. No existing desktop images are captured by these checks.
+
+**The new 0.1.5 Retina path still needs the physical two-Mac acceptance above.** Prior user-reported success across different Wi-Fi networks belongs to the earlier version; it is not evidence that the new scaling path has already been tested on both Macs.
+
 ## Version 0.1.2: Mirror and Extend
 
-Both peers must run 0.1.2 for Mirror support. Choose **Extend** when following the original acceptance test below. After it passes, disconnect, choose **Mirror**, and click **Mirror display**. Confirm that moving/opening a window on the host main screen produces the same picture on the display Mac, and that no additional display is created. Disconnect and switch back to Extend to confirm its independent desktop still works.
+Both peers must now run 0.1.5 (protocol v2). Choose **Extend** when following the original acceptance test below. After it passes, disconnect, choose **Mirror**, and click **Mirror display**. Confirm that moving/opening a window on the host main screen produces the same picture on the display Mac, and that no additional display is created. Disconnect and switch back to Extend to confirm its independent desktop still works.
 
 Local checks now cover both mode handshakes, portrait/ultrawide/Retina aspect-ratio sizing, and actual H.264 decoding at the non-macroblock-aligned 1230 × 800 Mirror resolution. The optional real main-screen capture check was skipped in this environment because MacPair has no Screen Recording grant; it did not request permission or capture any image.
 
@@ -23,9 +47,9 @@ Use the MacBook Pro as **Host Mac** and the MacBook Air as **Display Mac** (the 
 | 5 | Enter a deliberately incorrect 12-character code → Test connection | Pairing fails; no virtual display is created |
 | 6 | Enter the correct current code → Test connection | AWDL connection test passed; RTT updates |
 | 7 | Pro: Disconnect; grant Screen Recording; quit and reopen MacPair | The host has capture permission |
-| 8 | Pro: search, pair again → Extend display | A separate 1280 × 800 desktop appears |
+| 8 | Pro: search, pair again → Extend display | A separate desktop matching the receiver appears |
 | 9 | Drag a TextEdit/Safari window past the host desktop's right edge | The window appears on Air while the host retains its own desktop |
-| 10 | Double-click the display video, then Esc | Full screen enters and exits |
+| 10 | Observe automatic full screen; press Esc, then double-click | Full screen exits and re-enters; picture keeps its aspect ratio |
 | 11 | Change language to 简体中文, then English | Controls and existing status/diagnostic messages update without disconnecting |
 | 12 | Move/scroll a normal window for two minutes | New frames continue to arrive; record observed quality and RTT |
 | 13 | Pro: Disconnect | Virtual screen disappears; its windows return to remaining screens |

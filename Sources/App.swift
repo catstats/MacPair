@@ -26,7 +26,7 @@ struct MainView: View {
                     Picker(L("Language"), selection: $model.language) {
                         ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
                     }.frame(width: 185)
-                    Text(L("Prototype 0.1.4")).font(.caption).padding(7).background(.blue.opacity(0.1), in: Capsule())
+                    Text(L("Prototype 0.1.5")).font(.caption).padding(7).background(.blue.opacity(0.1), in: Capsule())
                 }
                 Text(L("No router, internet, or Apple ID needed. Keep Wi-Fi on; Bluetooth is recommended."))
                     .font(.callout).foregroundStyle(.secondary)
@@ -73,7 +73,7 @@ struct MainView: View {
                         Button(L("Copy diagnostics")) { model.copyDiagnostics() }.padding(.top, 6)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Text(L("Up to 30 fps. Mirror uses your main screen; Extend adds a 1280 × 800 desktop."))
+                Text(L("Up to 30 fps. Extend matches the display Mac with Retina scaling. Aspect ratio is preserved."))
                     .font(.caption).foregroundStyle(.secondary)
             }.padding(26)
         }.frame(minWidth: 700, minHeight: 620)
@@ -92,6 +92,23 @@ struct MainView: View {
                 .frame(width: 160)
                 .disabled(model.occupied)
                 Spacer()
+            }
+            if model.displayMode == .extend {
+                HStack(spacing: 12) {
+                    Text(L("Display resolution"))
+                    Picker(L("Display resolution"), selection: $model.resolution) {
+                        ForEach(ResolutionPreset.allCases) { preset in
+                            Text(L10n.text(preset.title)).tag(preset)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(width: 220)
+                    .disabled(model.occupied)
+                    Spacer()
+                }
+                Text(L("Default matches the display Mac. Larger Text increases text size; More Space fits more windows. Reconnect to change."))
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Text(L(model.displayMode == .mirror
                 ? "Mirror shows the host's main screen on the display Mac."
@@ -176,7 +193,7 @@ struct MainView: View {
                 Button(L("Wait for connection")) { model.listen() }
                     .buttonStyle(.borderedProminent).disabled(model.occupied)
             }
-            Text(L("The display Mac needs no Screen Recording permission. Its video window opens automatically. Double-click for full screen; press Esc to exit."))
+            Text(L("The display Mac needs no Screen Recording permission. Video opens in full screen automatically. Double-click or press Esc to exit full screen."))
                 .font(.callout).foregroundStyle(.secondary)
             Text(L("Use the host's keyboard and trackpad. Display-side input and audio are not included yet."))
                 .font(.caption).foregroundStyle(.secondary)

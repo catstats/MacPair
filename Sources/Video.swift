@@ -12,9 +12,11 @@ final class H264Encoder {
     private var session: VTCompressionSession?
     private var sequence: Int64 = 0
     let fps: Int
+    let bitrate: Int
     var onOutput: ((Data?, Data?, LocalizedMessage?) -> Void)?
     init(width: Int, height: Int, fps: Int) throws {
         self.fps = fps
+        bitrate = min(45_000_000, max(8_000_000, Int(Double(width) * Double(height) * Double(fps) * 0.18)))
         var result: VTCompressionSession?
         let specification = [kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder: true] as CFDictionary
         let status = VTCompressionSessionCreate(allocator: kCFAllocatorDefault,
@@ -38,7 +40,7 @@ final class H264Encoder {
                 kVTCompressionPropertyKey_ProfileLevel: kVTProfileLevel_H264_Main_AutoLevel,
                 kVTCompressionPropertyKey_ExpectedFrameRate: fps,
                 kVTCompressionPropertyKey_MaxKeyFrameInterval: fps * 2,
-                kVTCompressionPropertyKey_AverageBitRate: 8_000_000
+                kVTCompressionPropertyKey_AverageBitRate: bitrate
             ]
             for (key, value) in properties {
                 try checkStatus(VTSessionSetProperty(result, key: key, value: value as CFTypeRef), "Set H.264 property \(key)")
@@ -98,7 +100,8 @@ final class H264Encoder {
 /// The same compressed-sample builder is used by the viewer and real decoder tests.
 final class H264Samples {
     private(set) var format: CMVideoFormatDescription?
-    func configure(_ data: Data) throws {
+    func reset() { format = nil }
+    func configure(_ data: Data, expectedWidth: Int? = nil, expectedHeight: Int? = nil) throws {
         guard data.count >= 10 else { throw PairError.message("Incomplete H.264 configuration") }
         let spsSize = Int(data.uint32BE(at: 0))
         guard spsSize > 0, spsSize <= 65_536, data.count >= spsSize + 8 else {
@@ -121,6 +124,12 @@ final class H264Samples {
             }
         }
         try checkStatus(status, "Parse video configuration")
+        if let description, let expectedWidth, let expectedHeight {
+            let dimensions = CMVideoFormatDescriptionGetDimensions(description)
+            guard Int(dimensions.width) == expectedWidth, Int(dimensions.height) == expectedHeight else {
+                throw PairError.message("The video dimensions do not match the negotiated display")
+            }
+        }
         format = description
     }
     func sample(_ bytes: Data) throws -> CMSampleBuffer {
@@ -168,11 +177,17 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
     private var busy = false
     private var stopped = false
     private var needsKeyframe = true
+    private var reportedDimensions = false
+    private let expectedWidth: Int
+    private let expectedHeight: Int
+    var onCaptureInfo: ((LocalizedMessage) -> Void)?
     var onError: ((LocalizedMessage) -> Void)?
     var onSent: (() -> Void)?
 
     init(link: PeerLink, width: Int, height: Int, fps: Int) throws {
         self.link = link
+        self.expectedWidth = width
+        self.expectedHeight = height
         self.encoder = try H264Encoder(width: width, height: height, fps: fps)
         super.init()
         encoder.onOutput = { [weak self] format, video, error in
@@ -196,6 +211,7 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         try Task.checkCancellation()
         guard let target else { throw PairError.message("Screen capture could not find the selected display") }
+        onCaptureInfo?("Capture source: \(target.width) × \(target.height); encoder: \(width) × \(height) px; bitrate \(encoder.bitrate / 1_000_000) Mbps")
         let configuration = SCStreamConfiguration()
         configuration.width = width
         configuration.height = height
@@ -222,6 +238,16 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
         let force = needsKeyframe
         needsKeyframe = false
         lock.unlock()
+        let width = CVPixelBufferGetWidth(image), height = CVPixelBufferGetHeight(image)
+        guard width == expectedWidth, height == expectedHeight else {
+            releaseFrame()
+            onError?("Screen capture returned unexpected pixel dimensions")
+            return
+        }
+        if !reportedDimensions {
+            reportedDimensions = true
+            onCaptureInfo?("Actual captured frame: \(width) × \(height) px")
+        }
         // Only one capture/encode/send is in flight. Skipped captures were never
         // encoded, so H.264 prediction never references a frame we discarded.
         do { try encoder.encode(image, forceKeyframe: force) }
