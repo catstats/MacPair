@@ -6,6 +6,13 @@ import CoreGraphics
 
 enum MacRole: String, CaseIterable { case host = "Host Mac", receiver = "Display Mac" }
 
+struct SessionSummary {
+    let rtt: String
+    let frames: Int
+    let path: LocalizedMessage
+    let diagnostic: Bool
+}
+
 @MainActor
 final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     @Published var language = L10n.language {
@@ -30,6 +37,8 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     @Published var rtt = "—"
     @Published var fps = 0
     @Published var totalFrames = 0
+    @Published var lastSession: SessionSummary?
+    @Published private(set) var hasEndedSession = false
     @Published var browsing = false
     @Published var listening = false
     @Published var connected = false
@@ -77,6 +86,15 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     var occupied: Bool { connected || connecting || cleaning }
     var isExtending: Bool { activeHello?.mode == "extend" }
 
+    var connectionTitle: LocalizedMessage {
+        if cleaning { return "Disconnecting…" }
+        if connecting { return "Connecting…" }
+        if connected { return diagnostic ? "Connection test passed" : "Connected" }
+        if listening { return "Waiting for connection" }
+        if hasEndedSession { return "Disconnected" }
+        return browsing ? "Looking for displays…" : "Ready"
+    }
+
     init(trustStore: TrustStore = TrustStore(), identity: PeerIdentity? = nil) {
         self.trustStore = trustStore
         self.localIdentity = identity ?? PeerIdentity.local()
@@ -118,6 +136,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     }
     func browse() {
         guard !occupied else { return }
+        hasEndedSession = false
         browser?.cancel()
         peers = []
         selectedID = nil
@@ -157,6 +176,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
             status = "Pairing is temporarily paused. Please wait before trying again."
             return
         }
+        hasEndedSession = false
         wantsToListen = true
         pairingCode = PairingCode.generate(excluding: previousCode)
         previousCode = pairingCode
@@ -170,7 +190,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
                     switch state {
                     case .ready:
                         self.listening = true
-                        self.status = "Waiting for the host. Select this Mac on the host and enter the pairing code below."
+                        self.status = "Select this Mac on the host. Paired Macs need no code."
                         self.log("Display advertising via Bonjour with peer-to-peer Wi-Fi enabled")
                     case .failed(let error):
                         self.stopAll(reason: "Listener failed: \(error.localizedDescription)")
@@ -287,6 +307,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
                 resolution: !testOnly && displayMode == .extend ? resolution : .recommended)
             try requestedHello?.validateRequest()
         } catch { status = error.appMessage; return }
+        hasEndedSession = false
         connecting = true
         status = "Establishing an encrypted connection over \(interface.name)…"
         log("Connection restricted to \(interface.name); router-network fallback is disabled")
@@ -395,7 +416,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
             if diagnostic {
                 link.send(.ready, try JSONEncoder().encode(hello))
                 sessionReady()
-                status = "Connection test passed. Disconnect on the host, choose Mirror or Extend, then start streaming."
+                status = "Connection test passed. Disconnect, then click Connect on the host to share its display."
             } else {
                 prepareReceiver(link: link, request: hello, token: token)
             }
@@ -432,8 +453,8 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
             countFrame()
             if totalFrames == 1 {
                 status = activeHello?.mode == "mirror"
-                    ? "Receiving the mirrored screen. Double-click the video to toggle full screen."
-                    : "Receiving the extended desktop. Double-click the video to toggle full screen."
+                    ? "Receiving the mirrored screen. Press Esc to exit full screen."
+                    : "Receiving the extended desktop. Press Esc to exit full screen."
                 log("First H.264 frame received")
             }
         case .failure:
@@ -589,7 +610,11 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         }
     }
     private func countFrame() { totalFrames += 1; framesThisSecond += 1 }
-    func endSession(reason: LocalizedMessage = "Connection ended") {
+    func endSession(reason: LocalizedMessage = "Disconnected") {
+        if connected {
+            lastSession = SessionSummary(rtt: rtt, frames: totalFrames, path: path, diagnostic: diagnostic)
+        }
+        hasEndedSession = hasEndedSession || connected || connecting
         if pendingTrustIsNew, !trustConfirmed, localTrustSaved, let pendingTrust {
             do { try trustStore.forget(id: pendingTrust.id) } catch { log(error.appMessage) }
         }
@@ -610,6 +635,9 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         connected = false
         connecting = false
         fps = 0
+        totalFrames = 0
+        rtt = "—"
+        path = "Not connected"
         activeHello = nil
         requestedHello = nil
         mirrorDisplayID = nil
@@ -699,8 +727,13 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         updateViewerHUD()
     }
     func copyDiagnostics() {
-        let text = (["MacPair 0.1.6", ProcessInfo.processInfo.operatingSystemVersionString,
-                     L10n.text(role.rawValue), status.localized, path.localized, "RTT \(rtt), frames \(totalFrames), fps \(fps)"] + events.map(\.localized)).joined(separator: "\n")
+        var details = ["MacPair 0.1.7", ProcessInfo.processInfo.operatingSystemVersionString,
+            L10n.text(role.rawValue), connectionTitle.localized, status.localized, path.localized]
+        if connected { details.append("Live: RTT \(rtt), frames \(totalFrames), fps \(fps)") }
+        if let previous = lastSession {
+            details.append("Last session: RTT \(previous.rtt), frames \(previous.frames), \(previous.path.localized)")
+        }
+        let text = (details + events.map(\.localized)).joined(separator: "\n")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }

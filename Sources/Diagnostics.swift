@@ -490,8 +490,17 @@ enum DiagnosticTests {
                 try expect(model.pairingCode.isEmpty && !model.listening, "A successfully used code stayed available")
                 let saved = try hostStore.credential(forPeer: displayID.id)
                 guard let saved else { throw PairError.message("The first pairing was not remembered") }
+                // Synthetic numbers reproduce the stale-statistics UI regression;
+                // they are not a measured performance result.
+                model.rtt = "7.6 ms"; model.totalFrames = 455; model.fps = 30
+                model.endSession()
+                try expect(model.lastSession?.rtt == "7.6 ms" && model.lastSession?.frames == 455,
+                           "Disconnect lost the previous session summary")
+                try expect(model.rtt == "—" && model.fps == 0 && model.totalFrames == 0
+                    && model.path.localized == L("Not connected"), "Disconnected state retained live statistics")
                 first.cancel()
                 try await waitFor({ model.listening && !model.occupied }, "A fresh waiting session was not created")
+                print("PASS: disconnect archives the last session and clears all live metrics")
                 try expect(PairingCode.isValid(model.pairingCode) && model.pairingCode != originalCode, "The old six-digit code was reused")
                 model.stopAll()
                 try await waitFor({ !model.occupied }, "First receiver did not stop")

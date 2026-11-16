@@ -8,6 +8,8 @@ enum Preview {
     @MainActor static func main() {
         let searching = CommandLine.arguments.contains("--searching")
         let mirrorMode = CommandLine.arguments.contains("--mirror")
+        let disconnected = CommandLine.arguments.contains("--disconnected")
+        let diagnostics = CommandLine.arguments.contains("--diagnostics")
         let viewer = CommandLine.arguments.contains("--viewer")
         let app = NSApplication.shared
         let appearance: NSAppearance.Name = searching ? .darkAqua : .aqua
@@ -39,10 +41,17 @@ enum Preview {
                     window.close()
                     continue
                 }
-                for receiver in ((searching || mirrorMode) ? [false] : [false, true]) {
+                for receiver in ((searching || mirrorMode || disconnected || diagnostics) ? [false] : [false, true]) {
                     let model = AppModel(trustStore: TrustStore(memoryOnly: true), identity: PeerIdentity(id: "00000000-0000-0000-0000-000000000001", name: "Preview Mac"))
                     model.language = language
                     if mirrorMode { model.displayMode = .mirror }
+                    if disconnected {
+                        model.connected = true
+                        model.rtt = "7.6 ms"
+                        model.totalFrames = 455
+                        model.path = "Network path: \("awdl0")"
+                        model.endSession()
+                    }
                     if searching {
                         model.browsing = true
                         model.status = "Looking for nearby displays… Keep Wi-Fi on on both Macs."
@@ -50,12 +59,12 @@ enum Preview {
                         model.role = .receiver
                         model.listening = true
                         model.pairingCode = "024681"
-                        model.status = "Waiting for the host. Select this Mac on the host and enter the pairing code below."
+                        model.status = "Select this Mac on the host. Paired Macs need no code."
                     }
-                    let hosting = NSHostingView(rootView: MainView(model: model)
+                    let hosting = NSHostingView(rootView: MainView(model: model, diagnosticsExpanded: diagnostics)
                         .environment(\.colorScheme, searching ? .dark : .light)
                         .background(Color(nsColor: .windowBackgroundColor)))
-                    hosting.frame = NSRect(x: 0, y: 0, width: 760, height: 680)
+                    hosting.frame = NSRect(x: 0, y: 0, width: 720, height: 550)
                     let window = NSWindow(contentRect: hosting.frame,
                         styleMask: [.titled], backing: .buffered, defer: false)
                     window.isReleasedWhenClosed = false
@@ -65,7 +74,7 @@ enum Preview {
                     window.appearance = NSAppearance(named: appearance)
                     window.makeKeyAndOrderFront(nil)
                     RunLoop.main.run(until: Date().addingTimeInterval(0.3))
-                    let prefix = (searching ? "search-" : (mirrorMode ? "host-mirror-" : (receiver ? "display-" : "host-"))) + language.rawValue
+                    let prefix = disconnected ? "disconnected-" + language.rawValue : diagnostics ? "diagnostics-" + language.rawValue : (searching ? "search-" : (mirrorMode ? "host-mirror-" : (receiver ? "display-" : "host-"))) + language.rawValue
                     for frame in (searching ? [1, 2] : [1]) {
                         if frame == 2 { RunLoop.main.run(until: Date().addingTimeInterval(0.9)) }
                         hosting.layoutSubtreeIfNeeded()

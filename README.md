@@ -2,7 +2,7 @@
 
 Extend your desktop onto a nearby Mac, or mirror your main screen. The user has confirmed that the two-Mac display works when the Macs are connected to different Wi-Fi networks.
 
-**Prototype 0.1.6. English is the default; switch to 简体中文 from the language menu.** [中文说明](README.zh-CN.md)
+**Prototype 0.1.7. English is the default; switch to 简体中文 from Settings → Language.** [中文说明](README.zh-CN.md)
 
 The local protocol, secure-pairing, H.264, and virtual-display checks have passed on the development Mac. **User report on 2026-11-16: virtual display and operation across different Wi-Fi networks passed. The user-described “no Wi-Fi” scenario did not work; whether the Wi-Fi radio was off or merely disconnected was not specified.** Standalone operation without an access point remains unconfirmed. See [test instructions and verification record](TESTING.md).
 
@@ -10,33 +10,35 @@ The local protocol, secure-pairing, H.264, and virtual-display checks have passe
 
 Double-click `Start MacPair.command`. In an iCloud checkout the runnable App is kept in this Mac's local cache; the launcher finds it automatically. Outside iCloud, the default App path is `build/MacPair.app`.
 
-To use a second Mac, copy `build/MacPair-0.1.6.zip` to it, unzip it, and open MacPair.app. The package includes the full source. The second Mac does not need Xcode.
+To use a second Mac, copy `build/MacPair-0.1.7.zip` to it, unzip it, and open MacPair.app. The package includes the full source. The second Mac does not need Xcode.
 
 Requirements: macOS 13 or later on both Macs, with compatible Apple peer-to-peer Wi-Fi hardware. The app is a universal arm64/x86_64 build. Both architectures have been compiled; the processor and OS versions of the user-tested pair were not separately recorded.
 
 This local build is ad hoc signed and is not notarized by Apple. If macOS blocks it, use the app-specific approval in **System Settings → Privacy & Security → Open Anyway** for your own build. You do not need to disable SIP or global Gatekeeper.
 
-## Test the direct connection first
+## Connect
 
-1. Put both Macs nearby. **Keep Wi-Fi switched on.** Bluetooth is recommended.
+1. Put both Macs nearby. **Keep Wi-Fi switched on.**
 2. On the display Mac, choose **Display Mac → Wait for connection**.
 3. Allow **Local Network** access if macOS asks. Allow the app's incoming connection if the firewall asks.
-4. On the host Mac, choose **Host Mac → Find nearby displays**.
-5. Select the other Mac when it shows **Direct AWDL available**.
-6. First pairing: enter the **six-digit number** shown on the display Mac. Click **Test connection**. Previously paired Macs show **Paired · No code needed** and skip this input.
-7. The host should show **AWDL connection test passed**, with a round-trip time.
+4. On the host, choose **Host Mac → Find nearby displays**, then select the Mac marked **Ready to connect**.
+5. First pairing: enter its **six-digit number** in the labelled Pairing code field. Remembered Macs need no code.
+6. Choose **Extend** or **Mirror** and click **Connect**. The host needs Screen Recording permission; grant it and quit/reopen the same App if required.
+7. The display opens in full screen automatically. Press **Esc** or double-click to leave full screen.
 
-This test requires no Screen Recording permission and creates no virtual screen.
+The main window is approximately 720 × 550. The gear button opens **Settings**, including Language and Paired Macs. **Diagnostics → Test connection** checks the encrypted link without capturing or sharing a screen; it does not require Screen Recording permission. Disconnect after that test before using Connect.
+
+After disconnecting, the main status says **Disconnected**. Previous RTT and frame counts are labelled **Last session**; they are separate from live statistics and are not end-to-end display latency.
 
 ## Pair once; reconnect without typing
 
-Both Macs need **0.1.6**. The new pairing transport uses protocol v3 and its own Bonjour service, so older builds do not appear as compatible peers.
+Use **0.1.7** on both Macs for this interface. Protocol v3 and saved pairings from 0.1.6 remain compatible; builds before 0.1.6 are not compatible.
 
 - A new Mac uses a uniformly random **six-digit numeric code**, including possible leading zeroes. It expires after **5 minutes** and is invalidated on successful authentication. Spaces or a hyphen are accepted when pasting.
 - After both Macs confirm the saved pairing, the app stores a **strong per-device credential in the local macOS login Keychain**. It never saves the six-digit code. The app does not synchronize these credentials through iCloud.
-- Next time, open the apps, keep the display Mac waiting, select it on the host, and click Test connection, Mirror or Extend. **No code is needed for a remembered Mac.** This also works after reopening the app, and when reversing the Macs' roles. It is a manual connection, not automatic sleep/reconnect recovery.
+- Next time, open the apps, keep the display Mac waiting, select it on the host, and click **Connect**. **No code is needed for a remembered Mac.** This also works after reopening the app, and when reversing the Macs' roles. It is a manual connection, not automatic sleep/reconnect recovery.
 - Expiring a short code leaves remembered Macs available. Choose **New code** only when adding a new Mac.
-- **Paired Macs → Forget**, available on either Mac while disconnected, removes its credential. The other Mac may also need to forget its stale saved entry before pairing again with a new code. A matching computer name alone never grants trust.
+- **Settings → Paired Macs → Forget**, available on either Mac while disconnected, removes its credential. The other Mac may also need to forget its stale saved entry before pairing again with a new code. A matching computer name alone never grants trust.
 - Five failed pairing attempts share one global budget. The receiver stops waiting for 30 seconds, after which the user must explicitly start waiting again. Restarting the waiting session does not bypass that cooldown.
 - If Keychain access is denied, the current connection can still be encrypted, but the UI says it was not remembered. Half-saved first-pairing records are removed when the other Mac does not acknowledge storage.
 
@@ -44,12 +46,12 @@ The short code is used with the existing **BoringSSL SPAKE2 password-authenticat
 
 ## Choose Mirror or Extend
 
-Install **0.1.6 on both Macs**. On the host, choose the mode before starting:
+Install **0.1.7 on both Macs**. On the host, choose the mode before starting:
 
 | Mode | What the display Mac shows | Start button |
 | --- | --- | --- |
-| **Mirror** | The host's existing main screen, scaled to fit while keeping its aspect ratio | **Mirror display** |
-| **Extend** | An independent desktop matched to the display Mac, with 1×/2× scaling | **Extend display** |
+| **Mirror** | The host's existing main screen, scaled to fit while keeping its aspect ratio | **Connect** |
+| **Extend** | An independent desktop matched to the display Mac, with 1×/2× scaling | **Connect** |
 
 To change modes, disconnect, choose the other mode, and reconnect. The display Mac accepts either mode automatically.
 
@@ -57,7 +59,7 @@ Mirror uses ScreenCaptureKit to capture the existing main display. It does not c
 
 ## Display resolution (Extend)
 
-Both Macs must run **0.1.6**; the sizing handshake uses protocol v3. Choose the resolution on the host before connecting:
+Both Macs must run **0.1.7**; the sizing handshake uses protocol v3. Choose the resolution on the host before connecting:
 
 | Setting | Desktop space | Text size on the receiver |
 | --- | --- | --- |
@@ -74,7 +76,7 @@ This prototype accepts up to 5120 pixels on either stream axis and 16 megapixels
 1. On the host, click **Disconnect**.
 2. Click **Grant Screen Recording**. Allow MacPair in System Settings, then **quit and reopen the same app**. Screen Recording is only needed on the host.
 3. Search again and select the display Mac. If the pairing was remembered, no code is needed. Otherwise enter its current six-digit code.
-4. Choose **Extend**, then click **Extend display**.
+4. Choose **Extend**, then click **Connect**.
 5. An independent desktop matching the display Mac appears to the right of the host's desktop.
 6. Drag a normal window past the host desktop's right edge. It should appear on the display Mac.
 7. The display opens in full screen automatically. Double-click or press **Esc** to exit full screen.
@@ -82,7 +84,7 @@ This prototype accepts up to 5120 pixels on either stream axis and 16 megapixels
 
 Use the **host's** keyboard, mouse, and trackpad to operate the extended desktop. This version does not forward input from the display Mac or transmit audio.
 
-To test Mirror instead, disconnect, select **Mirror**, and click **Mirror display**. Open or move a window on the host main screen and confirm the same action appears on the display Mac. No extra desktop should be added.
+To test Mirror instead, disconnect, select **Mirror**, and click **Connect**. Open or move a window on the host main screen and confirm the same action appears on the display Mac. No extra desktop should be added.
 
 Disconnecting stops capture. In Extend mode, it also removes the virtual screen. macOS moves its windows back to the remaining displays. The display Mac can keep waiting for a new connection.
 

@@ -4,6 +4,21 @@ Version 0.1.1 adds a white highlight sweeping over the stationary gray searching
 
 [中文测试指南](TESTING.zh-CN.md) · [Quick start](README.md)
 
+## Version 0.1.7: compact connection UI
+
+Check the English and Simplified Chinese interface at approximately 720 × 550:
+
+- Choose Extend or Mirror and use the single **Connect** action. **Test connection** appears only after expanding Diagnostics.
+- Open the gear button: Settings contains Language and Paired Macs → Forget.
+- New peers have a visible **Pairing code** label. Saved peers skip the code.
+- Normal display sessions enter full screen automatically; diagnostic tests do not open a video window.
+- Disconnect: live RTT, path, FPS and frame count clear. Previous values appear only under **Last session**. Network and handshake errors remain available in the status detail and diagnostics.
+- Synthetic preview fixtures use 7.6 ms / 455 frames only to reproduce the reported layout; these are not new measurements.
+
+Local checks passed on 2026-11-17: both language layouts (host/display/disconnected/expanded diagnostics), universal build and strict signature, the disconnect-statistics regression, and the existing encrypted-pairing/codec/Keychain suite. Automatic full-screen entry uses the previously tested receiver path; it was not changed in this UI release.
+
+The authentication protocol and Retina/video pipeline are unchanged from 0.1.6. Continue physical two-Mac acceptance below with 0.1.7 and the Connect / Diagnostics entry points.
+
 ## Version 0.1.6: six digits and remembered Macs
 
 Both Macs must run **0.1.6**. Protocol v3 has a separate discovery service. Keep the earlier Retina/two-Mac acceptance below, using the new pairing flow:
