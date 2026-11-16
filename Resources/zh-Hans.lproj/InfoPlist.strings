@@ -1,0 +1,3 @@
+"CFBundleDisplayName" = "MacPair";
+"NSLocalNetworkUsageDescription" = "MacPair 通过近距离点对点 Wi-Fi 连接另一台 Mac 并传输镜像或扩展画面，无需互联网。";
+"NSScreenCaptureUsageDescription" = "镜像模式捕获主屏幕，扩展模式捕获新建的虚拟显示器，再将画面发送到配对的 Mac。";
