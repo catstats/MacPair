@@ -9,3 +9,8 @@ if [[ "${1:-}" == "--display" ]]; then
     "$app_binary" --display-smoke-test
     "$app_binary" --receiver-smoke-test
 fi
+
+if [[ "${1:-}" == "--pairing" ]]; then
+    "$app_binary" --pairing-smoke-test
+    "$app_binary" --keychain-smoke-test
+fi

@@ -26,7 +26,7 @@ struct MainView: View {
                     Picker(L("Language"), selection: $model.language) {
                         ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
                     }.frame(width: 185)
-                    Text(L("Prototype 0.1.5")).font(.caption).padding(7).background(.blue.opacity(0.1), in: Capsule())
+                    Text(L("Prototype 0.1.6")).font(.caption).padding(7).background(.blue.opacity(0.1), in: Capsule())
                 }
                 Text(L("No router, internet, or Apple ID needed. Keep Wi-Fi on; Bluetooth is recommended."))
                     .font(.callout).foregroundStyle(.secondary)
@@ -64,6 +64,23 @@ struct MainView: View {
                             Button(L("Arrange displays")) { model.openDisplays() }
                         }
                     }
+                }
+                if !model.trustedDevices.isEmpty {
+                    DisclosureGroup(L("Paired Macs")) {
+                        VStack(spacing: 9) {
+                            ForEach(model.trustedDevices) { device in
+                                HStack {
+                                    Label(device.peer.name, systemImage: "laptopcomputer").lineLimit(1)
+                                    Spacer()
+                                    Button(L("Forget")) { model.forgetDevice(device) }.disabled(model.occupied)
+                                }
+                            }
+                        }.padding(.top, 8)
+                    }
+                }
+                if model.connected, !model.rememberedSession {
+                    Text(L("This session could not be remembered. Allow Keychain access and pair again to skip codes next time."))
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 DisclosureGroup(L("Diagnostics")) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -141,6 +158,9 @@ struct MainView: View {
                                     Image(systemName: model.selectedID == peer.id ? "largecircle.fill.circle" : "circle")
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(peer.name).lineLimit(1)
+                                        if model.isTrusted(peer) {
+                                            Text(L("Saved pairing · No code needed")).font(.caption).foregroundStyle(.blue)
+                                        }
                                         Text(L(peer.isDirect
                                             ? "Direct AWDL available · \(peer.interfaces)"
                                             : "Waiting for a direct interface · \(peer.interfaces)"))
@@ -157,8 +177,16 @@ struct MainView: View {
                 }.frame(height: 100)
             }
             HStack {
-                TextField(L("Pairing code from the display Mac"), text: $model.enteredCode)
-                    .textFieldStyle(.roundedBorder).disabled(model.occupied)
+                if model.selectedPeerIsTrusted {
+                    HStack {
+                        Label(L("Paired · No code needed"), systemImage: "lock.fill").font(.callout)
+                        Spacer()
+                        Button(L("Forget this Mac")) { model.forgetSelectedDevice() }.disabled(model.occupied)
+                    }.frame(maxWidth: .infinity)
+                } else {
+                    TextField(L("Six-digit code from the display Mac"), text: $model.enteredCode)
+                        .textFieldStyle(.roundedBorder).disabled(model.occupied)
+                }
                 Button(L("Test connection")) { model.connect(testOnly: true) }
                     .disabled(model.occupied || model.selectedPeer?.isDirect != true)
                 Button(L(model.displayMode == .mirror ? "Mirror display" : "Extend display")) { model.connect(testOnly: false) }
@@ -178,21 +206,33 @@ struct MainView: View {
     private var receiverPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(L("Use this Mac as a second display")).font(.headline)
-            if model.listening {
+            if model.occupied && model.pairingCode.isEmpty {
+                Text(L("Paired. A new code will appear after disconnecting."))
+                    .font(.callout).foregroundStyle(.secondary)
+            } else if model.listening {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(L("Enter this code on the host. A new code is generated each time you start waiting."))
+                    Text(L(model.pairingCode.isEmpty
+                        ? "Paired Macs can connect without a code. Choose New code to pair a new Mac."
+                        : "For a new Mac, enter these six digits on the host. Valid for 5 minutes and one successful connection."))
                         .font(.callout).foregroundStyle(.secondary)
                     HStack {
-                        Text(model.pairingCode).font(.system(size: 29, weight: .semibold, design: .monospaced))
-                            .textSelection(.enabled)
+                        if model.pairingCode.isEmpty {
+                            Label(L("Paired Macs only"), systemImage: "lock.fill").font(.callout)
+                        } else {
+                            Text(model.pairingCode).font(.system(size: 36, weight: .semibold, design: .monospaced)).tracking(4)
+                                .textSelection(.enabled)
+                        }
                         Spacer()
+                        Button(L("New code")) { model.newPairingCode() }.disabled(model.occupied)
                         Button(L("Stop waiting")) { model.stopAll() }.disabled(model.cleaning)
                     }
                 }.padding(16).background(.blue.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
             } else {
                 Button(L("Wait for connection")) { model.listen() }
-                    .buttonStyle(.borderedProminent).disabled(model.occupied)
+                    .buttonStyle(.borderedProminent).disabled(model.occupied || model.pairingCoolingDown)
             }
+            Text(L("Pair once with six digits. Remembered Macs reconnect without a code. Use MacPair 0.1.6 on both Macs."))
+                .font(.caption).foregroundStyle(.secondary)
             Text(L("The display Mac needs no Screen Recording permission. Video opens in full screen automatically. Double-click or press Esc to exit full screen."))
                 .font(.callout).foregroundStyle(.secondary)
             Text(L("Use the host's keyboard and trackpad. Display-side input and audio are not included yet."))

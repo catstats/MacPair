@@ -8,6 +8,9 @@ import Security
 private func expect(_ condition: @autoclosure () -> Bool, _ message: LocalizedMessage) throws {
     if !condition() { throw PairError.message(message) }
 }
+@MainActor
+private final class DiscoveryProbe { var found = false }
+
 private final class DecodeProbe {
     let done = DispatchSemaphore(value: 0)
     var width = 0
@@ -30,8 +33,10 @@ enum DiagnosticTests {
             print("PASS: Mirror/Extend negotiation and aspect-preserving screen sizes")
             try retinaNegotiation()
             print("PASS: receiver logical/backing sizing, 1×/2× presets and tampered-handshake rejection")
+            try shortCodePairing()
+            print("PASS: six-digit policy, expiry, lockout, SPAKE2 confirmation, tamper and replay rejection")
             try encryptedLoopback()
-            print("PASS: real TLS-PSK loopback, 512 KB payload and wrong-code rejection")
+            print("PASS: real encrypted loopback, code-free remembered reconnect, revocation, downgrade and wrong-code rejection")
             try videoRoundtrip()
             try videoRoundtrip(width: 1230, height: 800)
             try videoRoundtrip(width: 2560, height: 1664)
@@ -94,8 +99,8 @@ enum DiagnosticTests {
             do { try invalid.validate() } catch { rejected = true }
             try expect(rejected, "不兼容会话未被拒绝")
         }
-        try expect(PeerNetwork.normalize("abcd-efgh jklm") == "ABCDEFGHJKLM", "配对码规范化失败")
-        try expect(PeerNetwork.normalize(PeerNetwork.newCode()).count == 12, "配对码长度失败")
+        try expect(PeerNetwork.normalize("024-681") == "024681", "配对码规范化失败")
+        try expect(PeerNetwork.normalize(PeerNetwork.newCode()).count == 6, "配对码长度失败")
     }
     private static func mirrorDimensions() throws {
         for (width, height, expectedWidth, expectedHeight) in [
@@ -185,22 +190,105 @@ enum DiagnosticTests {
         do { try decoded.validateRequest() } catch { rejected = true }
         try expect(rejected, "A legacy peer must be told to update")
     }
+    private static func shortCodePairing() throws {
+        for _ in 0..<1000 { try expect(PairingCode.isValid(PairingCode.generate()), "Generated an invalid numeric code") }
+        for valid in ["000000", "000123", "024 681", "024-681"] {
+            try expect(PairingCode.isValid(valid), "A valid six-digit code was rejected")
+        }
+        for invalid in ["", "12345", "1234567", "123a56", "１２３４５６", "٠١٢٣٤٥"] {
+            try expect(!PairingCode.isValid(invalid), "A non-ASCII or incorrectly sized code was accepted")
+        }
+        try expect(PairingCode.normalize(" 000-123 ") == "000123", "Leading zeroes were lost")
+        var gate = PairingGate()
+        try expect(gate.issue(at: 100) && gate.accepts(at: 399.9) && !gate.accepts(at: 400), "Five-minute expiry failed")
+        try expect(gate.issue(at: 401), "Cannot explicitly issue a fresh code")
+        for attempt in 1...5 {
+            let blocked = gate.failed(at: 402 + Double(attempt))
+            try expect(blocked == (attempt == 5), "Global pairing attempt budget failed")
+        }
+        gate.invalidate() // Stopping/restarting must not bypass the cooldown.
+        try expect(!gate.issue(at: 420) && !gate.accepts(at: 420), "Restart bypassed the pairing cooldown")
+        try expect(gate.issue(at: 437) && gate.failures == 0, "Cooldown did not expire")
+        gate.consume()
+        try expect(!gate.accepts(at: 438), "A successfully used code stayed valid")
+        let store = TrustStore(memoryOnly: true)
+        let peer = PeerIdentity(id: UUID().uuidString, name: "Fixture Mac")
+        let fixture = TrustedDevice(id: String(repeating: "a", count: 32), peer: peer,
+            secret: Data(repeating: 42, count: 32), createdAt: Date())
+        try store.save(fixture)
+        let loaded = try store.credential(forPeer: peer.id)
+        try expect(loaded?.secret == fixture.secret, "Trusted-device storage failed")
+        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(fixture)) as! [String: Any]
+        try expect(json["code"] == nil && json["pin"] == nil, "A PIN was included in the persisted credential")
+        try store.forgetPeer(peer.id)
+        let forgotten = try store.credential(id: fixture.id)
+        try expect(forgotten == nil, "Forgetting did not remove the pairing secret")
+
+        let host = try PasswordExchange(host: true, code: "024681")
+        let display = try PasswordExchange(host: false, code: "024681")
+        let hostKeys = try host.finish(peerMessage: display.message)
+        let displayKeys = try display.finish(peerMessage: host.message)
+        try expect(hostKeys.verifyPeer(displayKeys.localProof) && displayKeys.verifyPeer(hostKeys.localProof), "SPAKE2 mutual confirmation failed")
+        try expect(!hostKeys.verifyPeer(hostKeys.localProof), "Reflected confirmation was accepted")
+        var rejected = false
+        do { _ = try host.finish(peerMessage: display.message) } catch { rejected = true }
+        try expect(rejected, "A SPAKE2 context was reused")
+        let wrongHost = try PasswordExchange(host: true, code: "024680")
+        let correctDisplay = try PasswordExchange(host: false, code: "024681")
+        let wrongKeys = try wrongHost.finish(peerMessage: correctDisplay.message)
+        let correctKeys = try correctDisplay.finish(peerMessage: wrongHost.message)
+        try expect(!correctKeys.verifyPeer(wrongKeys.localProof) && !wrongKeys.verifyPeer(correctKeys.localProof), "Wrong PIN produced a valid confirmation")
+        let sameRoleA = try PasswordExchange(host: true, code: "024681")
+        let sameRoleB = try PasswordExchange(host: true, code: "024681")
+        let sameRoleKeysA = try sameRoleA.finish(peerMessage: sameRoleB.message)
+        let sameRoleKeysB = try sameRoleB.finish(peerMessage: sameRoleA.message)
+        try expect(!sameRoleKeysA.verifyPeer(sameRoleKeysB.localProof), "Two hosts authenticated as opposite roles")
+
+        let sender = PacketCipher(keys: hostKeys), receiver = PacketCipher(keys: displayKeys)
+        let empty = try sender.seal(.hello, Data())
+        let first = try receiver.open(empty)
+        try expect(first.kind == .hello && first.body.isEmpty, "Empty encrypted payload roundtrip failed")
+        rejected = false
+        do { _ = try receiver.open(empty) } catch { rejected = true }
+        try expect(rejected, "A replayed encrypted record was accepted")
+        let body = Data("MacPair secret application payload".utf8)
+        let record = try sender.seal(.video, body)
+        try expect(record.range(of: body) == nil, "Plain application payload appeared on the wire")
+        var altered = record; altered[altered.count - 1] ^= 1
+        rejected = false
+        do { _ = try receiver.open(altered) } catch { rejected = true }
+        try expect(rejected, "A modified authentication tag was accepted")
+        let restored = try receiver.open(record)
+        try expect(restored.kind == .video && restored.body == body, "Authenticated data did not roundtrip")
+        let pending1 = try sender.seal(.format, Data([1])), pending2 = try sender.seal(.format, Data([2]))
+        rejected = false
+        do { _ = try receiver.open(pending2) } catch { rejected = true }
+        try expect(rejected, "An out-of-order record was accepted")
+        _ = try receiver.open(pending1); _ = try receiver.open(pending2)
+    }
     private static func encryptedLoopback() throws {
         let callbackQueue = DispatchQueue(label: "MacPair.tests")
         let listening = DispatchSemaphore(value: 0)
         let reply = DispatchSemaphore(value: 0)
         let wrongClosed = DispatchSemaphore(value: 0)
-        let code = "ABCD-EFGH-JKLM"
+        let code = "024681"
+        let hostIdentity = PeerIdentity(id: "00000000-0000-0000-0000-000000000001", name: "Test host")
+        let displayIdentity = PeerIdentity(id: "00000000-0000-0000-0000-000000000002", name: "Test display")
         let payload = Data((0..<(512 * 1024)).map { UInt8($0 % 251) })
-        let listener = try NWListener(using: PeerNetwork.parameters(code: code), on: .any)
+        let receiverTrust = TrustStore(memoryOnly: true)
+        let listener = try NWListener(using: PeerNetwork.parameters(), on: .any)
         var accepted: [PeerLink] = []
         var receivedCorrectly = false
         var encryptedCorrectly = false
         var wrongWasReady = false
         listener.stateUpdateHandler = { state in if case .ready = state { listening.signal() } }
         listener.newConnectionHandler = { connection in
-            let server = PeerLink(connection, callbackQueue: callbackQueue)
+            let server = PeerLink(connection, host: false, code: code, identity: displayIdentity,
+                lookupTrusted: { try receiverTrust.credential(id: $0) }, callbackQueue: callbackQueue)
             accepted.append(server)
+            server.onReady = { [weak server] in
+                if let credential = server?.authenticatedCredential { try? receiverTrust.save(credential) }
+            }
             server.onPacket = { [weak server] packet in
                 if packet.kind == .hello { server?.send(.ready, packet.body) }
             }
@@ -214,27 +302,63 @@ enum DiagnosticTests {
         try expect(listening.wait(timeout: .now() + 5) == .success, "测试监听器未就绪")
         guard let port = listener.port else { throw PairError.message("测试监听器没有端口") }
         let client = PeerLink(NWConnection(host: "127.0.0.1", port: port,
-            using: PeerNetwork.parameters(code: code)), callbackQueue: callbackQueue)
+            using: PeerNetwork.parameters()), host: true, code: code, identity: hostIdentity, expectedPeer: displayIdentity, callbackQueue: callbackQueue)
         client.onReady = { [weak client] in
-            if let metadata = client?.connection.metadata(definition: NWProtocolTLS.definition) as? NWProtocolTLS.Metadata {
-                encryptedCorrectly = sec_protocol_metadata_get_negotiated_tls_ciphersuite(metadata.securityProtocolMetadata).rawValue
-                    == UInt16(TLS_PSK_WITH_AES_128_GCM_SHA256)
-            }
+            encryptedCorrectly = client?.isReady == true
             client?.send(.hello, payload)
         }
         client.onPacket = { packet in receivedCorrectly = packet.kind == .ready && packet.body == payload; reply.signal() }
         client.start()
         defer { client.cancel() }
-        try expect(reply.wait(timeout: .now() + 8) == .success && receivedCorrectly && encryptedCorrectly, "TLS 正确配对、加密套件或大数据包传输失败")
+        try expect(reply.wait(timeout: .now() + 8) == .success && receivedCorrectly && encryptedCorrectly, "Secure pairing or encrypted payload transfer failed")
+
+        guard let saved = client.authenticatedCredential else { throw PairError.message("No saved pairing material") }
+        try saved.validate()
+        try expect(saved.peer.id == displayIdentity.id && saved.secret.count == 32, "Saved pairing was not bound to its peer")
+        let hostTrust = TrustStore(memoryOnly: true)
+        try hostTrust.save(saved)
+        let impostor = PeerIdentity(id: UUID().uuidString, name: displayIdentity.name)
+        let wrongNameLookup = try hostTrust.credential(forPeer: impostor.id)
+        try expect(wrongNameLookup == nil, "A device with the same name inherited trust")
+        let downgradeClosed = DispatchSemaphore(value: 0)
+        client.onClosed = { _ in downgradeClosed.signal() }
+        client.connection.send(content: Wire.frame(.hello, Data("unencrypted injection".utf8)), completion: .idempotent)
+        try expect(downgradeClosed.wait(timeout: .now() + 5) == .success, "Plaintext injection was accepted after pairing")
+
+        let resumed = DispatchSemaphore(value: 0)
+        var resumedOK = false
+        let reconnect = PeerLink(NWConnection(host: "127.0.0.1", port: port,
+            using: PeerNetwork.parameters()), host: true, code: nil, identity: hostIdentity,
+            expectedPeer: displayIdentity, trusted: saved, callbackQueue: callbackQueue)
+        reconnect.onReady = { [weak reconnect] in reconnect?.send(.hello, payload) }
+        reconnect.onPacket = { [weak reconnect] packet in
+            resumedOK = reconnect?.isResuming == true && packet.kind == .ready && packet.body == payload
+            resumed.signal()
+        }
+        reconnect.start()
+        defer { reconnect.cancel() }
+        try expect(resumed.wait(timeout: .now() + 8) == .success && resumedOK, "Remembered reconnect without any PIN failed")
+        reconnect.cancel()
+        try receiverTrust.forget(id: saved.id)
+        let revokedClosed = DispatchSemaphore(value: 0)
+        var revokedWasReady = false
+        let revoked = PeerLink(NWConnection(host: "127.0.0.1", port: port,
+            using: PeerNetwork.parameters()), host: true, code: nil, identity: hostIdentity,
+            expectedPeer: displayIdentity, trusted: saved, callbackQueue: callbackQueue)
+        revoked.onReady = { revokedWasReady = true; revokedClosed.signal() }
+        revoked.onClosed = { _ in revokedClosed.signal() }
+        revoked.start()
+        defer { revoked.cancel() }
+        try expect(revokedClosed.wait(timeout: .now() + 8) == .success && !revokedWasReady, "A forgotten Mac reconnected without a new code")
 
         let wrong = PeerLink(NWConnection(host: "127.0.0.1", port: port,
-            using: PeerNetwork.parameters(code: "ZZZZ-ZZZZ-ZZZZ")), callbackQueue: callbackQueue)
+            using: PeerNetwork.parameters()), host: true, code: "024680", identity: hostIdentity, expectedPeer: displayIdentity, callbackQueue: callbackQueue)
         wrong.onReady = { wrongWasReady = true; wrongClosed.signal() }
         wrong.onClosed = { _ in wrongClosed.signal() }
         wrong.start()
         defer { wrong.cancel() }
         let wrongResult = wrongClosed.wait(timeout: .now() + 8)
-        try expect(wrongResult == .success && !wrongWasReady, "错误配对码未被 TLS 拒绝")
+        try expect(wrongResult == .success && !wrongWasReady, "Wrong six-digit code was not rejected")
     }
     private static func videoRoundtrip(width: Int = 320, height: Int = 200) throws {
         let ready = DispatchSemaphore(value: 0)
@@ -308,6 +432,181 @@ enum DiagnosticTests {
         var rejected = false
         do { _ = try samples.sample(Data([0,0,0,99,1])) } catch { rejected = true }
         try expect(rejected, "非法 AVCC 帧未被拒绝")
+    }
+
+    @MainActor
+    static func pairingSmokeTest() -> Never {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.prohibited)
+        Task { @MainActor in
+            let hostID = PeerIdentity(id: UUID().uuidString, name: "Test main Mac")
+            let displayID = PeerIdentity(id: UUID().uuidString, name: "Test display Mac")
+            let hostStore = TrustStore(memoryOnly: true), displayStore = TrustStore(memoryOnly: true)
+            var model = AppModel(trustStore: displayStore, identity: displayID)
+            model.role = .receiver
+            @MainActor func waitFor(_ predicate: () -> Bool, _ message: LocalizedMessage) async throws {
+                for _ in 0..<100 {
+                    if predicate() { return }
+                    try await Task.sleep(nanoseconds: 100_000_000)
+                }
+                throw PairError.message(message)
+            }
+            @MainActor func client(code: String?, trusted: TrustedDevice? = nil, remember: Bool = true) throws -> PeerLink {
+                guard let port = model.receivingPort else { throw PairError.message("No pairing test port") }
+                let link = PeerLink(NWConnection(host: "127.0.0.1", port: port, using: PeerNetwork.parameters()),
+                    host: true, code: code, identity: hostID, expectedPeer: displayID, trusted: trusted)
+                link.onReady = { [weak link] in
+                    guard let link, let credential = link.authenticatedCredential else { return }
+                    if remember { try? hostStore.save(credential) }
+                    link.send(.trustStatus, Data([remember ? 1 : 0]))
+                }
+                link.onPacket = { [weak link] packet in
+                    if packet.kind == .trustStatus, let body = try? JSONEncoder().encode(SessionHello(
+                        version: Wire.version, mode: "diagnostic", width: 1280, height: 800, fps: 30)) {
+                        link?.send(.hello, body)
+                    }
+                }
+                return link
+            }
+            do {
+                model.listen()
+                try await waitFor({ model.listening }, "Display did not start waiting")
+                let browser = NWBrowser(for: .bonjourWithTXTRecord(type: PeerNetwork.serviceType, domain: nil),
+                    using: PeerNetwork.discoveryParameters())
+                let discovery = DiscoveryProbe()
+                browser.browseResultsChangedHandler = { results, _ in
+                    let found = results.compactMap(DiscoveredPeer.init).contains { $0.deviceIdentity?.id == displayID.id }
+                    Task { @MainActor in discovery.found = found }
+                }
+                browser.start(queue: .main)
+                do { try await waitFor({ discovery.found }, "Bonjour did not include the receiver's stable TXT identity") }
+                catch { browser.cancel(); throw error }
+                browser.cancel()
+                print("PASS: actual Bonjour TXT discovery identifies the correct Mac")
+                let originalCode = model.pairingCode
+                let first = try client(code: originalCode)
+                first.start()
+                try await waitFor({ model.connected && model.rememberedSession }, "First pairing or mutual trust acknowledgement failed")
+                try expect(model.pairingCode.isEmpty && !model.listening, "A successfully used code stayed available")
+                let saved = try hostStore.credential(forPeer: displayID.id)
+                guard let saved else { throw PairError.message("The first pairing was not remembered") }
+                first.cancel()
+                try await waitFor({ model.listening && !model.occupied }, "A fresh waiting session was not created")
+                try expect(PairingCode.isValid(model.pairingCode) && model.pairingCode != originalCode, "The old six-digit code was reused")
+                model.stopAll()
+                try await waitFor({ !model.occupied }, "First receiver did not stop")
+
+                // Simulate reopening the app with the same persistent credential store.
+                model = AppModel(trustStore: displayStore, identity: displayID)
+                model.role = .receiver
+                try expect(model.trustedDevices.count == 1, "Paired device was lost across app-model restart")
+                model.listen()
+                try await waitFor({ model.listening }, "Restarted receiver did not start")
+                model.expirePairingCode()
+                try expect(model.listening && model.pairingCode.isEmpty, "Code expiry hid trusted-device availability")
+                let resumed = try client(code: nil, trusted: saved)
+                resumed.start()
+                try await waitFor({ model.connected && model.rememberedSession }, "Remembered pairing still required a code")
+                try expect(resumed.isResuming, "Reconnect did not use the saved credential")
+                resumed.cancel()
+                try await waitFor({ model.listening && !model.occupied }, "Receiver did not return to waiting")
+                guard let summary = model.trustedDevices.first else { throw PairError.message("No device to forget") }
+                model.forgetDevice(summary)
+                try expect(model.trustedDevices.isEmpty, "Forget did not remove the trusted device")
+
+                var revokedClosed = false, unauthorized = false
+                let revoked = try client(code: nil, trusted: saved)
+                revoked.onReady = { unauthorized = true }
+                revoked.onClosed = { _ in revokedClosed = true }
+                revoked.start()
+                try await waitFor({ revokedClosed && !model.occupied }, "Revoked credential did not close")
+                try expect(!unauthorized && !model.connected, "A forgotten Mac was allowed to reconnect")
+                let badCode = String(format: "%06d", (Int(model.pairingCode)! + 1) % 1_000_000)
+                // The revoked credential was failure one; four bad PINs exhaust
+                // the single global budget (changing auth modes cannot reset it).
+                for _ in 0..<4 {
+                    var closed = false
+                    let wrong = try client(code: badCode)
+                    wrong.onReady = { unauthorized = true }
+                    wrong.onClosed = { _ in closed = true }
+                    wrong.start()
+                    try await waitFor({ closed && !model.occupied }, "Failed pairing did not finish")
+                    wrong.cancel()
+                }
+                try expect(!unauthorized && model.pairingCoolingDown && !model.listening && model.pairingCode.isEmpty,
+                           "The five-attempt global lockout did not activate")
+                model.listen()
+                try expect(!model.listening, "Wait for connection bypassed cooldown")
+                model.stopAll()
+                print("PASS: actual AppModel first pairing, one-time code, restart without PIN, Forget revocation and five-attempt cooldown")
+
+                let oneShotStore = TrustStore(memoryOnly: true)
+                model = AppModel(trustStore: oneShotStore, identity: displayID)
+                model.role = .receiver
+                model.listen()
+                try await waitFor({ model.listening }, "One-session receiver did not start")
+                let oneShot = try client(code: model.pairingCode, remember: false)
+                oneShot.start()
+                try await waitFor({ model.connected }, "One-session pairing failed")
+                let incomplete = try oneShotStore.all()
+                try expect(!model.rememberedSession && incomplete.isEmpty, "A half-saved pairing was kept without peer acknowledgement")
+                oneShot.cancel()
+                model.stopAll()
+                print("PASS: declined/failed credential saving keeps the session encrypted and removes half-saved trust")
+                exit(0)
+            } catch {
+                model.stopAll()
+                fputs("FAIL: \(error.localizedDescription)\n", stderr)
+                exit(1)
+            }
+        }
+        app.run()
+        exit(1)
+    }
+
+    static func keychainReadProbe() -> Never {
+        do {
+            let args = CommandLine.arguments
+            guard args.count == 5, args[2].hasPrefix("local.macpair.prototype.test."),
+                  UUID(uuidString: String(args[2].dropFirst("local.macpair.prototype.test.".count))) != nil else {
+                throw PairError.message("Invalid scoped Keychain probe")
+            }
+            let record = try TrustStore(service: args[2]).credential(id: args[3])
+            try expect(record?.peer.id == args[4] && record?.secret == Data(repeating: 0x73, count: 32),
+                "A second process could not read the persisted test credential")
+            print("PASS: a fresh MacPair process read the scoped persisted credential")
+            exit(0)
+        } catch { fputs("FAIL: \(error.localizedDescription)\n", stderr); exit(1) }
+    }
+
+    static func keychainSmokeTest() -> Never {
+        do {
+            let namespace = "local.macpair.prototype.test." + UUID().uuidString
+            let store = TrustStore(service: namespace)
+            let record = TrustedDevice(id: String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()),
+                peer: PeerIdentity(id: UUID().uuidString, name: "Temporary MacPair test"),
+                secret: Data(repeating: 0x73, count: 32), createdAt: Date())
+            defer { try? store.forget(id: record.id) }
+            try store.save(record)
+            let loaded = try store.credential(forPeer: record.peer.id)
+            try expect(loaded?.secret == record.secret && loaded?.id == record.id, "Real Keychain roundtrip failed")
+            let child = Process()
+            child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+            child.arguments = ["--keychain-read-probe", namespace, record.id, record.peer.id]
+            let finished = DispatchSemaphore(value: 0)
+            child.terminationHandler = { _ in finished.signal() }
+            try child.run()
+            guard finished.wait(timeout: .now() + 8) == .success else {
+                child.terminate()
+                throw PairError.message("Keychain persistence probe timed out")
+            }
+            try expect(child.terminationStatus == 0, "Persisted credential was not available after process restart")
+            try store.forget(id: record.id)
+            let removed = try store.credential(id: record.id)
+            try expect(removed == nil, "Temporary Keychain record was not deleted")
+            print("PASS: scoped real macOS Keychain save/read/remove; no user pairing records accessed")
+            exit(0)
+        } catch { fputs("FAIL: \(error.localizedDescription)\n", stderr); exit(1) }
     }
 
     @MainActor
@@ -391,6 +690,9 @@ enum MacPairLauncher {
         setbuf(stdout, nil)
         if CommandLine.arguments.contains("--self-test") { DiagnosticTests.run() }
         if CommandLine.arguments.contains("--display-smoke-test") { DiagnosticTests.displaySmokeTest() }
+        if CommandLine.arguments.contains("--pairing-smoke-test") { DiagnosticTests.pairingSmokeTest() }
+        if CommandLine.arguments.contains("--keychain-read-probe") { DiagnosticTests.keychainReadProbe() }
+        if CommandLine.arguments.contains("--keychain-smoke-test") { DiagnosticTests.keychainSmokeTest() }
         if CommandLine.arguments.contains("--receiver-smoke-test") { DiagnosticTests.receiverSmokeTest() }
         if CommandLine.arguments.contains("--mirror-smoke-test") { MirrorCaptureCheck.run() }
         MacPairApp.main()

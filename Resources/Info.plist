@@ -13,9 +13,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.5</string>
+	<string>0.1.6</string>
 	<key>CFBundleVersion</key>
-	<string>6</string>
+	<string>7</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>NSPrincipalClass</key>
@@ -26,7 +26,7 @@
 	<string>MacPair uses nearby peer-to-peer Wi-Fi to connect to another Mac and stream a mirrored or extended desktop, without internet.</string>
 	<key>NSBonjourServices</key>
 	<array>
-		<string>_macpair._tcp</string>
+		<string>_macpair-v3._tcp</string>
 	</array>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Capture the main screen in Mirror mode or the new virtual display in Extend mode and send it to your paired Mac.</string>

@@ -4,6 +4,22 @@ Version 0.1.1 adds a white highlight sweeping over the stationary gray searching
 
 [中文测试指南](TESTING.zh-CN.md) · [Quick start](README.md)
 
+## Version 0.1.6: six digits and remembered Macs
+
+Both Macs must run **0.1.6**. Protocol v3 has a separate discovery service. Keep the earlier Retina/two-Mac acceptance below, using the new pairing flow:
+
+1. Open Display Mac → Wait for connection. Confirm exactly six numeric digits, including leading zeroes if present.
+2. On the host, enter the code and use Test connection. Confirm both apps report a remembered pairing. Disconnect.
+3. Connect again with the host code field empty. Repeat after quitting/reopening both apps, and after exchanging host/display roles. A known Mac should need no code; the receiver still needs to be waiting.
+4. Leave the invitation for five minutes. The code disappears; an already paired Mac should still connect. New Macs need New code.
+5. Disconnect and choose Paired Macs → Forget on the receiver. The host's stale saved credential must fail. Forget its old entry too, then pair with a fresh code.
+6. Try incorrect codes five times. The receiver stops advertising for 30 seconds and requires explicit waiting again. Do not include real codes or credentials in bug reports.
+7. If Keychain permission is denied, confirm the connection is described as one-session-only and neither side presents an unconfirmed new credential as a remembered pair.
+
+Local 0.1.6 checks passed on 2026-11-17, including universal arm64/x86_64 compilation and strict signature verification. The checks use actual SPAKE2 confirmation, authenticated encrypted TCP, 512 KB payloads, replay/tamper/plaintext rejection, wrong PINs, remembered reconnect without a PIN, same-name separation and revocation. The AppModel smoke check exercises both storage acknowledgements, one-time codes, Bonjour TXT identity discovery, restart with the same store, reconnect after code expiry, Forget, the global failure budget and half-save cleanup. A dedicated test service in the real login Keychain is written, read by a second MacPair process, and removed; the test never queries the user's pairing service.
+
+These local checks do not replace a physical two-Mac AWDL test or an independent cryptographic security review. The user-reported different-Wi-Fi result below belongs to the earlier app. No new standalone/no-Wi-Fi success is claimed.
+
 ## Version 0.1.5: Retina resolution acceptance
 
 Update **both Macs to 0.1.5**. Earlier versions cannot negotiate receiver geometry. On the host choose **Extend → Display resolution → Default (Recommended)** and connect. The receiver should enter full screen automatically.
@@ -30,7 +46,7 @@ Close existing MacPair display sessions before `./scripts/test.sh --display`. Wi
 
 ## Version 0.1.2: Mirror and Extend
 
-Both peers must now run 0.1.5 (protocol v2). Choose **Extend** when following the original acceptance test below. After it passes, disconnect, choose **Mirror**, and click **Mirror display**. Confirm that moving/opening a window on the host main screen produces the same picture on the display Mac, and that no additional display is created. Disconnect and switch back to Extend to confirm its independent desktop still works.
+Both peers must now run 0.1.6 (protocol v3). Choose **Extend** when following the original acceptance test below. After it passes, disconnect, choose **Mirror**, and click **Mirror display**. Confirm that moving/opening a window on the host main screen produces the same picture on the display Mac, and that no additional display is created. Disconnect and switch back to Extend to confirm its independent desktop still works.
 
 Local checks now cover both mode handshakes, portrait/ultrawide/Retina aspect-ratio sizing, and actual H.264 decoding at the non-macroblock-aligned 1230 × 800 Mirror resolution. The optional real main-screen capture check was skipped in this environment because MacPair has no Screen Recording grant; it did not request permission or capture any image.
 
@@ -42,9 +58,9 @@ Use the MacBook Pro as **Host Mac** and the MacBook Air as **Display Mac** (the 
 | --- | --- | --- |
 | 1 | Open the same MacPair version on both Macs | English UI; language menu also offers 简体中文 |
 | 2 | Disconnect router/hotspot networks and wired network cables; leave Wi-Fi on | The app can only use its direct wireless path |
-| 3 | Air: Display Mac → Wait for connection | A new 12-character pairing code appears |
+| 3 | Air: Display Mac → Wait for connection | A new six-digit numeric pairing code appears |
 | 4 | Pro: Host Mac → Find nearby displays | Air appears with Direct AWDL available |
-| 5 | Enter a deliberately incorrect 12-character code → Test connection | Pairing fails; no virtual display is created |
+| 5 | Enter a deliberately incorrect six-digit code → Test connection | Pairing fails; no virtual display is created |
 | 6 | Enter the correct current code → Test connection | AWDL connection test passed; RTT updates |
 | 7 | Pro: Disconnect; grant Screen Recording; quit and reopen MacPair | The host has capture permission |
 | 8 | Pro: search, pair again → Extend display | A separate desktop matching the receiver appears |

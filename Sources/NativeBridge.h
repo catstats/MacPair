@@ -7,3 +7,12 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)invalidate;
 @end
 NS_ASSUME_NONNULL_END
+
+NS_ASSUME_NONNULL_BEGIN
+// One-use wrapper around the vendored SPAKE2 implementation.
+@interface MPPasswordExchange : NSObject
+@property(readonly) NSData *message;
+- (nullable instancetype)initWithHost:(BOOL)host secret:(NSData *)secret hostID:(NSString *)hostID displayID:(NSString *)displayID;
+- (nullable NSData *)sharedKeyForMessage:(NSData *)message;
+@end
+NS_ASSUME_NONNULL_END

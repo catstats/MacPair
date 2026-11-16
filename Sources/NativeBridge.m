@@ -42,3 +42,44 @@
     @autoreleasepool { _display = nil; }
 }
 @end
+
+#import "CCryptoBoringSSL_curve25519.h"
+#import "CCryptoBoringSSL_mem.h"
+
+@implementation MPPasswordExchange {
+    SPAKE2_CTX *_context;
+    NSData *_message;
+}
+- (nullable instancetype)initWithHost:(BOOL)host secret:(NSData *)secret hostID:(NSString *)hostID displayID:(NSString *)displayID {
+    self = [super init];
+    if (!self) return nil;
+    __attribute__((objc_precise_lifetime)) NSString *hostIdentity = [@"MacPair/v3/host/" stringByAppendingString:hostID];
+    __attribute__((objc_precise_lifetime)) NSString *displayIdentity = [@"MacPair/v3/display/" stringByAppendingString:displayID];
+    const char *hostName = hostIdentity.UTF8String;
+    const char *displayName = displayIdentity.UTF8String;
+    const char *mine = host ? hostName : displayName;
+    const char *theirs = host ? displayName : hostName;
+    _context = SPAKE2_CTX_new(host ? spake2_role_alice : spake2_role_bob,
+        (const uint8_t *)mine, strlen(mine), (const uint8_t *)theirs, strlen(theirs));
+    if (!_context) return nil;
+    uint8_t output[SPAKE2_MAX_MSG_SIZE];
+    size_t size = 0;
+    if (!SPAKE2_generate_msg(_context, output, &size, sizeof(output), secret.bytes, secret.length)) return nil;
+    _message = [NSData dataWithBytes:output length:size];
+    OPENSSL_cleanse(output, sizeof(output));
+    return self;
+}
+- (NSData *)message { return _message; }
+- (nullable NSData *)sharedKeyForMessage:(NSData *)message {
+    if (!_context || message.length != SPAKE2_MAX_MSG_SIZE) return nil;
+    uint8_t key[SPAKE2_MAX_KEY_SIZE];
+    size_t size = 0;
+    int ok = SPAKE2_process_msg(_context, key, &size, sizeof(key), message.bytes, message.length);
+    SPAKE2_CTX_free(_context);
+    _context = NULL;
+    NSData *result = ok && size == SPAKE2_MAX_KEY_SIZE ? [NSData dataWithBytes:key length:size] : nil;
+    OPENSSL_cleanse(key, sizeof(key));
+    return result;
+}
+- (void)dealloc { SPAKE2_CTX_free(_context); }
+@end

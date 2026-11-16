@@ -2,15 +2,15 @@
 
 Extend your desktop onto a nearby Mac, or mirror your main screen. The user has confirmed that the two-Mac display works when the Macs are connected to different Wi-Fi networks.
 
-**Prototype 0.1.5. English is the default; switch to 简体中文 from the language menu.** [中文说明](README.zh-CN.md)
+**Prototype 0.1.6. English is the default; switch to 简体中文 from the language menu.** [中文说明](README.zh-CN.md)
 
-The local protocol, TLS, H.264, and virtual-display checks have passed on the development Mac. **User report on 2026-11-16: virtual display and operation across different Wi-Fi networks passed. The user-described “no Wi-Fi” scenario did not work; whether the Wi-Fi radio was off or merely disconnected was not specified.** Standalone operation without an access point remains unconfirmed. See [test instructions and verification record](TESTING.md).
+The local protocol, secure-pairing, H.264, and virtual-display checks have passed on the development Mac. **User report on 2026-11-16: virtual display and operation across different Wi-Fi networks passed. The user-described “no Wi-Fi” scenario did not work; whether the Wi-Fi radio was off or merely disconnected was not specified.** Standalone operation without an access point remains unconfirmed. See [test instructions and verification record](TESTING.md).
 
 ## Start here
 
 Double-click `Start MacPair.command`. In an iCloud checkout the runnable App is kept in this Mac's local cache; the launcher finds it automatically. Outside iCloud, the default App path is `build/MacPair.app`.
 
-To use a second Mac, copy `build/MacPair-0.1.5.zip` to it, unzip it, and open MacPair.app. The package includes the full source. The second Mac does not need Xcode.
+To use a second Mac, copy `build/MacPair-0.1.6.zip` to it, unzip it, and open MacPair.app. The package includes the full source. The second Mac does not need Xcode.
 
 Requirements: macOS 13 or later on both Macs, with compatible Apple peer-to-peer Wi-Fi hardware. The app is a universal arm64/x86_64 build. Both architectures have been compiled; the processor and OS versions of the user-tested pair were not separately recorded.
 
@@ -23,14 +23,28 @@ This local build is ad hoc signed and is not notarized by Apple. If macOS blocks
 3. Allow **Local Network** access if macOS asks. Allow the app's incoming connection if the firewall asks.
 4. On the host Mac, choose **Host Mac → Find nearby displays**.
 5. Select the other Mac when it shows **Direct AWDL available**.
-6. Enter the 12-character code displayed on the other Mac. Click **Test connection**.
+6. First pairing: enter the **six-digit number** shown on the display Mac. Click **Test connection**. Previously paired Macs show **Paired · No code needed** and skip this input.
 7. The host should show **AWDL connection test passed**, with a round-trip time.
 
 This test requires no Screen Recording permission and creates no virtual screen.
 
+## Pair once; reconnect without typing
+
+Both Macs need **0.1.6**. The new pairing transport uses protocol v3 and its own Bonjour service, so older builds do not appear as compatible peers.
+
+- A new Mac uses a uniformly random **six-digit numeric code**, including possible leading zeroes. It expires after **5 minutes** and is invalidated on successful authentication. Spaces or a hyphen are accepted when pasting.
+- After both Macs confirm the saved pairing, the app stores a **strong per-device credential in the local macOS login Keychain**. It never saves the six-digit code. The app does not synchronize these credentials through iCloud.
+- Next time, open the apps, keep the display Mac waiting, select it on the host, and click Test connection, Mirror or Extend. **No code is needed for a remembered Mac.** This also works after reopening the app, and when reversing the Macs' roles. It is a manual connection, not automatic sleep/reconnect recovery.
+- Expiring a short code leaves remembered Macs available. Choose **New code** only when adding a new Mac.
+- **Paired Macs → Forget**, available on either Mac while disconnected, removes its credential. The other Mac may also need to forget its stale saved entry before pairing again with a new code. A matching computer name alone never grants trust.
+- Five failed pairing attempts share one global budget. The receiver stops waiting for 30 seconds, after which the user must explicitly start waiting again. Restarting the waiting session does not bypass that cooldown.
+- If Keychain access is denied, the current connection can still be encrypted, but the UI says it was not remembered. Half-saved first-pairing records are removed when the other Mac does not acknowledge storage.
+
+The short code is used with the existing **BoringSSL SPAKE2 password-authenticated key exchange**, not hashed directly into a TLS PSK. Mutual key confirmation gates all application data; independent AES-256-GCM keys and strict counters protect both directions. Every reconnect performs a fresh exchange using the stored strong credential. See [RFC 9257 §4.2](https://www.rfc-editor.org/rfc/rfc9257.html#section-4.2) for the distinction between low-entropy TLS PSKs and PAKE. This integration remains an experimental prototype without an independent security audit.
+
 ## Choose Mirror or Extend
 
-Install **0.1.5 on both Macs**. On the host, choose the mode before starting:
+Install **0.1.6 on both Macs**. On the host, choose the mode before starting:
 
 | Mode | What the display Mac shows | Start button |
 | --- | --- | --- |
@@ -43,7 +57,7 @@ Mirror uses ScreenCaptureKit to capture the existing main display. It does not c
 
 ## Display resolution (Extend)
 
-Both Macs must run **0.1.5**; the sizing handshake uses protocol v2. Choose the resolution on the host before connecting:
+Both Macs must run **0.1.6**; the sizing handshake uses protocol v3. Choose the resolution on the host before connecting:
 
 | Setting | Desktop space | Text size on the receiver |
 | --- | --- | --- |
@@ -59,7 +73,7 @@ This prototype accepts up to 5120 pixels on either stream axis and 16 megapixels
 
 1. On the host, click **Disconnect**.
 2. Click **Grant Screen Recording**. Allow MacPair in System Settings, then **quit and reopen the same app**. Screen Recording is only needed on the host.
-3. Search again, select the display Mac, and enter its current code.
+3. Search again and select the display Mac. If the pairing was remembered, no code is needed. Otherwise enter its current six-digit code.
 4. Choose **Extend**, then click **Extend display**.
 5. An independent desktop matching the display Mac appears to the right of the host's desktop.
 6. Drag a normal window past the host desktop's right edge. It should appear on the display Mac.
@@ -84,12 +98,13 @@ Round-trip time is a network heartbeat measurement, not end-to-end display laten
 
 ## Build and check
 
-No downloaded packages, cloud services, or paid developer account are needed. The build machine needs Xcode or development tools with a macOS SDK.
+No network-fetched packages, cloud services, or paid developer account are needed. The build machine needs Xcode with Swift 6 and a macOS SDK. The published Swift Crypto/BoringSSL C source is vendored locally and built as a static library; the receiving Mac still needs only the App.
 
 ```bash
 ./scripts/build.sh             # universal arm64 + x86_64 app
 ./scripts/build.sh --native    # faster, current architecture only
-./scripts/test.sh              # real local TLS and H.264 checks
+./scripts/test.sh              # real local secure-pairing and H.264 checks
+./scripts/test.sh --pairing    # remembered reconnect, Forget, expiry/lockout and scoped Keychain checks
 ./scripts/test.sh --display    # real 1×/2× displays + temporary fullscreen sizing check
 ./scripts/preview.sh           # render English/Chinese UI layout fixtures
 ./scripts/package.sh           # app + guides + complete source
@@ -105,7 +120,7 @@ Build first, then grant Screen Recording and restart. Avoid rebuilding/re-signin
 Host Mac                                      Display Mac
 Virtual display → ScreenCaptureKit → H.264
                        ↓
-                 TLS-PSK / TCP ── AWDL ─────→ decode + window/full screen
+                 SPAKE2 → AES-GCM / TCP ── AWDL ─────→ decode + window/full screen
                        ↑                          ↓
                        └──── heartbeat / RTT ─────┘
 ```

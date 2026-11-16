@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import Foundation
 
-enum PacketKind: UInt8 { case hello = 1, ready, ping, pong, format, video, failure }
+enum PacketKind: UInt8 { case hello = 1, ready, ping, pong, format, video, failure, pairOffer, pairProof, sealed, trustStatus }
 struct Packet { let kind: PacketKind; let body: Data }
 
 enum PairError: LocalizedError {
@@ -10,7 +10,7 @@ enum PairError: LocalizedError {
 }
 
 enum Wire {
-    static let version = 2
+    static let version = 3
     static let maximumPacket = 8 * 1024 * 1024
     static func frame(_ kind: PacketKind, _ body: Data = Data()) -> Data {
         precondition(body.count + 1 <= maximumPacket)

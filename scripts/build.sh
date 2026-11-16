@@ -10,13 +10,15 @@ if [[ "${1:-}" == "--native" ]]; then architectures=("$(uname -m)"); fi
 outputs=()
 for arch in "${architectures[@]}"; do
     echo "Building $arch (macOS 13+)..."
+    crypto_lib="$(./scripts/build-crypto.sh "$arch")"
     object="$task_build_root/objects/NativeBridge-$arch.o"
     binary="$task_build_root/objects/MacPair-$arch"
     xcrun clang -fobjc-arc -fmodules -isysroot "$sdk" -target "$arch-apple-macosx13.0" \
+        -I Vendor/PasswordExchange/Sources/CCryptoBoringSSL/include \
         -c Sources/NativeBridge.m -o "$object"
     xcrun swiftc -O -swift-version 5 -parse-as-library -sdk "$sdk" \
         -target "$arch-apple-macosx13.0" -module-cache-path "$task_build_root/ModuleCache" \
-        -import-objc-header Sources/NativeBridge.h Sources/*.swift "$object" \
+        -import-objc-header Sources/NativeBridge.h Sources/*.swift "$object" "$crypto_lib" -lc++ \
         -framework Cocoa -framework ScreenCaptureKit -framework VideoToolbox \
         -o "$binary"
     outputs+=("$binary")
@@ -28,6 +30,9 @@ else
 fi
 cp Resources/Info.plist "$stage/Contents/Info.plist"
 cp LICENSE "$stage/Contents/Resources/LICENSE"
+ditto Vendor/PasswordExchange/LICENSE.txt "$stage/Contents/Resources/SwiftCrypto-LICENSE.txt"
+ditto Vendor/PasswordExchange/NOTICE.txt "$stage/Contents/Resources/SwiftCrypto-NOTICE.txt"
+if [[ -d Vendor/PasswordExchange/license ]]; then ditto Vendor/PasswordExchange/license "$stage/Contents/Resources/ThirdPartyLicenses"; fi
 ./scripts/build-icon.sh "$stage/Contents/Resources/MacPair.icns"
 ditto Resources/zh-Hans.lproj "$stage/Contents/Resources/zh-Hans.lproj"
 codesign --force --sign - --identifier local.macpair.prototype \

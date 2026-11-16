@@ -1,41 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import Foundation
 import Network
-import Security
-import CryptoKit
 
 enum PeerNetwork {
-    static let serviceType = "_macpair._tcp"
-    static func normalize(_ code: String) -> String {
-        code.uppercased().filter { !$0.isWhitespace && $0 != "-" }
-    }
-    static func newCode() -> String {
-        let alphabet = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
-        var random = SystemRandomNumberGenerator()
-        let chars = (0..<12).map { _ in alphabet.randomElement(using: &random)! }
-        return stride(from: 0, to: chars.count, by: 4)
-            .map { String(chars[$0..<($0 + 4)]) }.joined(separator: "-")
-    }
-    private static func dispatchData(_ bytes: Data) -> dispatch_data_t {
-        bytes.withUnsafeBytes { DispatchData(bytes: $0) } as dispatch_data_t
-    }
-    static func parameters(code: String, interface: NWInterface? = nil) -> NWParameters {
-        let tls = NWProtocolTLS.Options()
-        let options = tls.securityProtocolOptions
-        let key = Data(SHA256.hash(data: Data(("MacPair/v1/" + normalize(code)).utf8)))
-        sec_protocol_options_add_pre_shared_key(options, dispatchData(key),
-                                               dispatchData(Data("MacPair-v1".utf8)))
-        // Keep pairing attempts independent of the TLS session cache.
-        sec_protocol_options_set_tls_resumption_enabled(options, false)
-        sec_protocol_options_set_tls_tickets_enabled(options, false)
-        sec_protocol_options_set_min_tls_protocol_version(options, .TLSv12)
-        sec_protocol_options_set_max_tls_protocol_version(options, .TLSv12)
-        sec_protocol_options_append_tls_ciphersuite(options,
-            tls_ciphersuite_t(rawValue: UInt16(TLS_PSK_WITH_AES_128_GCM_SHA256))!)
+    // Separate discovery prevents an old TLS/12-character build being offered
+    // as a compatible six-digit peer.
+    static let serviceType = "_macpair-v3._tcp"
+    static func normalize(_ code: String) -> String { PairingCode.normalize(code) }
+    static func newCode() -> String { PairingCode.generate() }
+    static func parameters(interface: NWInterface? = nil) -> NWParameters {
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
         tcp.connectionTimeout = 12
-        let parameters = NWParameters(tls: tls, tcp: tcp)
+        // SPAKE2 authenticates the peers before PacketCipher permits any app
+        // packets. A six-digit value is never used directly as a TLS PSK.
+        let parameters = NWParameters(tls: nil, tcp: tcp)
         parameters.includePeerToPeer = true
         if let interface { parameters.requiredInterface = interface }
         return parameters
@@ -53,12 +32,16 @@ struct DiscoveredPeer: Identifiable {
     let endpoint: NWEndpoint
     let directInterface: NWInterface?
     let interfaces: String
+    let deviceIdentity: PeerIdentity?
     var isDirect: Bool { directInterface != nil }
 
     init?(_ result: NWBrowser.Result) {
         guard case let .service(name, type, domain, _) = result.endpoint else { return nil }
         self.id = "\(name).\(type).\(domain)"
         self.name = name
+        if case .bonjour(let record) = result.metadata, let value = record["id"], let id = UUID(uuidString: value)?.uuidString {
+            self.deviceIdentity = PeerIdentity(id: id, name: String(name.prefix(60)))
+        } else { self.deviceIdentity = nil }
         self.directInterface = result.interfaces.first { $0.name.hasPrefix("awdl") }
         self.interfaces = result.interfaces.map(\.name).sorted().joined(separator: ", ")
         // Keep the Bonjour service endpoint and its interface scope. Do not resolve
@@ -78,15 +61,39 @@ final class PeerLink {
     private var deadline: DispatchWorkItem?
     private var lastReceived = DispatchTime.now().uptimeNanoseconds
     private var isClosed = false
-    private var isReady = false
+    private(set) var isReady = false
+    private let host: Bool
+    private let code: String?
+    private let identity: PeerIdentity
+    private let expectedPeer: PeerIdentity?
+    private let trusted: TrustedDevice?
+    private let lookupTrusted: (String) throws -> TrustedDevice?
+    private var peerIdentity: PeerIdentity?
+    private var candidateCredential: TrustedDevice?
+    private(set) var authenticatedCredential: TrustedDevice?
+    private(set) var isResuming = false
+    private var exchange: PasswordExchange?
+    private var pendingKeys: PairingKeys?
+    private var cipher: PacketCipher?
+    private var preAuthenticationBytes = 0
     var onReady: (() -> Void)?
     var onPacket: ((Packet) -> Void)?
     var onClosed: ((LocalizedMessage) -> Void)?
     var onPath: ((LocalizedMessage) -> Void)?
     var onRTT: ((Double) -> Void)?
 
-    init(_ connection: NWConnection, callbackQueue: DispatchQueue = .main) {
+    init(_ connection: NWConnection, host: Bool, code: String?, identity: PeerIdentity,
+         expectedPeer: PeerIdentity? = nil, trusted: TrustedDevice? = nil,
+         lookupTrusted: @escaping (String) throws -> TrustedDevice? = { _ in nil },
+         callbackQueue: DispatchQueue = .main) {
         self.connection = connection
+        self.host = host
+        self.code = code
+        self.identity = identity
+        self.expectedPeer = expectedPeer
+        self.trusted = trusted
+        self.lookupTrusted = lookupTrusted
+        self.isResuming = trusted != nil
         self.callbackQueue = callbackQueue
     }
     func start() {
@@ -95,21 +102,32 @@ final class PeerLink {
             if CommandLine.arguments.contains("--trace") { print("TRACE NWConnection: \(state)") }
             switch state {
             case .ready:
-                self.isReady = true
-                self.deadline?.cancel()
-                self.lastReceived = DispatchTime.now().uptimeNanoseconds
-                self.reportPath(self.connection.currentPath)
-                self.deliver { $0.onReady?() }
-                self.receive()
-                self.startHeartbeat()
+                do {
+                    try self.identity.validate()
+                    if self.host {
+                        guard let peer = self.expectedPeer else { throw PairError.message("Invalid device identity") }
+                        try peer.validate()
+                        let secret: Data
+                        if let trusted = self.trusted {
+                            try trusted.validate()
+                            guard trusted.peer.id == peer.id else { throw PairError.message("Invalid saved pairing") }
+                            secret = trusted.secret
+                            self.candidateCredential = trusted
+                        } else {
+                            guard let code = self.code, PairingCode.isValid(code) else { throw PairError.message("Cannot prepare secure pairing") }
+                            secret = Data(PairingCode.normalize(code).utf8)
+                        }
+                        let exchange = try PasswordExchange(host: true, secret: secret, hostID: self.identity.id, displayID: peer.id)
+                        self.exchange = exchange
+                        let offer = PairingOffer(version: Wire.version, identity: self.identity, targetID: peer.id,
+                            credentialID: self.trusted?.id, message: exchange.message)
+                        self.sendRaw(.pairOffer, try JSONEncoder().encode(offer))
+                    }
+                    self.reportPath(self.connection.currentPath)
+                    self.receive()
+                } catch { self.finish(error.appMessage) }
             case .waiting(let error):
-                // A wrong PSK can enter .waiting rather than .failed. It is a
-                // terminal pairing failure, not a route worth retrying.
-                if case .tls = error {
-                    self.finish("Pairing failed. Check the code currently shown on the display Mac.")
-                } else {
-                    self.deliver { $0.onPath?("Waiting for network: \(error.localizedDescription)") }
-                }
+                self.deliver { $0.onPath?("Waiting for network: \(error.localizedDescription)") }
             case .failed(let error):
                 self.finish("Connection failed (check the code, Wi-Fi, and Local Network permission): \(error.localizedDescription)")
             case .cancelled: self.finish("Connection closed")
@@ -131,23 +149,100 @@ final class PeerLink {
         deliver { $0.onPath?("Network path: \(names.isEmpty ? "waiting for interface" : names)") }
     }
     func send(_ kind: PacketKind, _ body: Data = Data(), completion: ((Bool) -> Void)? = nil) {
-        guard body.count + 1 <= Wire.maximumPacket else { completion?(false); return }
-        let framed = Wire.frame(kind, body)
+        guard body.count + PacketCipher.overhead + 1 <= Wire.maximumPacket else { completion?(false); return }
         queue.async { [weak self] in
-            guard let self, !self.isClosed, self.isReady else { completion?(false); return }
-            self.connection.send(content: framed, completion: .contentProcessed { [weak self] error in
-                completion?(error == nil)
-                if let error { self?.finish("Send failed: \(error.localizedDescription)") }
-            })
+            guard let self, !self.isClosed, self.isReady, let cipher = self.cipher else { completion?(false); return }
+            do { self.sendRaw(.sealed, try cipher.seal(kind, body), completion: completion) }
+            catch { completion?(false); self.finish(error.appMessage) }
+        }
+    }
+    // Called only on the serial wire queue, including the two initial PAKE records.
+    private func sendRaw(_ kind: PacketKind, _ body: Data, completion: ((Bool) -> Void)? = nil) {
+        connection.send(content: Wire.frame(kind, body), completion: .contentProcessed { [weak self] error in
+            completion?(error == nil)
+            if let error { self?.finish("Send failed: \(error.localizedDescription)") }
+        })
+    }
+    private func handlePairing(_ packet: Packet) throws {
+        switch packet.kind {
+        case .pairOffer:
+            guard pendingKeys == nil, packet.body.count <= 1536 else {
+                throw PairError.message("Invalid secure pairing message")
+            }
+            let offer = try JSONDecoder().decode(PairingOffer.self, from: packet.body)
+            try offer.validate()
+            guard offer.targetID == identity.id else { throw PairError.message("Invalid device identity") }
+            let exchange: PasswordExchange
+            if host {
+                guard let current = self.exchange, offer.identity.id == expectedPeer?.id,
+                      offer.credentialID == trusted?.id else { throw PairError.message("Invalid device identity") }
+                exchange = current
+            } else {
+                guard self.exchange == nil, peerIdentity == nil else { throw PairError.message("Invalid secure pairing message") }
+                let secret: Data
+                if let id = offer.credentialID {
+                    guard let credential = try lookupTrusted(id), credential.peer.id == offer.identity.id else {
+                        throw PairError.message("Saved pairing is no longer available. Pair again with a new code.")
+                    }
+                    try credential.validate()
+                    secret = credential.secret
+                    candidateCredential = credential
+                    isResuming = true
+                } else {
+                    guard let code, PairingCode.isValid(code) else {
+                        throw PairError.message("Pairing code expired. Start waiting again for a new code.")
+                    }
+                    secret = Data(PairingCode.normalize(code).utf8)
+                }
+                exchange = try PasswordExchange(host: false, secret: secret, hostID: offer.identity.id, displayID: identity.id)
+                let response = PairingOffer(version: Wire.version, identity: identity, targetID: offer.identity.id,
+                    credentialID: offer.credentialID, message: exchange.message)
+                sendRaw(.pairOffer, try JSONEncoder().encode(response))
+            }
+            peerIdentity = offer.identity
+            let keys = try exchange.finish(peerMessage: offer.message)
+            self.exchange = nil
+            pendingKeys = keys
+            if candidateCredential == nil {
+                candidateCredential = TrustedDevice(id: keys.resumeID, peer: offer.identity,
+                    secret: keys.resumeSecret, createdAt: Date())
+            }
+            sendRaw(.pairProof, keys.localProof)
+        case .pairProof:
+            guard let keys = pendingKeys, keys.verifyPeer(packet.body) else {
+                throw PairError.message("Pairing failed. Check the six-digit code currently shown on the display Mac.")
+            }
+            guard let candidateCredential else { throw PairError.message("Invalid saved pairing") }
+            authenticatedCredential = candidateCredential
+            cipher = PacketCipher(keys: keys)
+            pendingKeys = nil
+            isReady = true
+            deadline?.cancel()
+            lastReceived = DispatchTime.now().uptimeNanoseconds
+            deliver { $0.onReady?() }
+            startHeartbeat()
+        default:
+            throw PairError.message("Update MacPair on both Macs to use six-digit pairing")
         }
     }
     private func receive() {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 256 * 1024) { [weak self] data, _, complete, error in
+        connection.receive(minimumIncompleteLength: 1, maximumLength: isReady ? 256 * 1024 : 1024) { [weak self] data, _, complete, error in
             guard let self, !self.isClosed else { return }
             if let data, !data.isEmpty {
+                if !self.isReady {
+                    self.preAuthenticationBytes += data.count
+                    guard self.preAuthenticationBytes <= 4096 else {
+                        self.finish("Invalid secure pairing message"); return
+                    }
+                }
                 self.lastReceived = DispatchTime.now().uptimeNanoseconds
                 do {
-                    for packet in try self.parser.append(data) {
+                    for incoming in try self.parser.append(data) {
+                        if !self.isReady { try self.handlePairing(incoming); continue }
+                        guard incoming.kind == .sealed, let cipher = self.cipher else {
+                            throw PairError.message("Unencrypted packet rejected")
+                        }
+                        let packet = try cipher.open(incoming.body)
                         if packet.kind == .ping {
                             guard packet.body.count == 8 else { throw PairError.message("Invalid heartbeat packet") }
                             self.send(.pong, packet.body)
@@ -193,6 +288,10 @@ final class PeerLink {
     private func finish(_ reason: LocalizedMessage) {
         guard !isClosed else { return }
         isClosed = true
+        isReady = false
+        exchange = nil
+        pendingKeys = nil
+        cipher = nil
         deadline?.cancel()
         timer?.cancel()
         timer = nil

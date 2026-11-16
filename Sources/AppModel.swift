@@ -22,6 +22,9 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     @Published var selectedID: String?
     @Published var enteredCode = ""
     @Published var pairingCode = ""
+    @Published var pairingCoolingDown = false
+    @Published var trustedDevices: [TrustedDeviceSummary] = []
+    @Published var rememberedSession = false
     @Published var status: LocalizedMessage = "Place both Macs nearby. Select Display Mac on the other Mac."
     @Published var path: LocalizedMessage = "Not connected"
     @Published var rtt = "—"
@@ -56,11 +59,59 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     private var receivedWidth = 0
     private var receivedHeight = 0
     private var helloDeadline: DispatchWorkItem?
+    private var pairingExpiry: Task<Void, Never>?
+    private var pairingCooldown: Task<Void, Never>?
+    private var pairingGate = PairingGate()
+    private var wantsToListen = false
+    private var sessionAuthenticated = false
+    private let trustStore: TrustStore
+    let localIdentity: PeerIdentity
+    private var previousCode: String?
+    private var pendingTrust: TrustedDevice?
+    private var pendingTrustIsNew = false
+    private var localTrustSaved = false
+    private var receivedTrustStatus = false
+    private var trustConfirmed = false
     private let serviceName = "MacPair · " + (Host.current().localizedName ?? "Mac")
     var selectedPeer: DiscoveredPeer? { peers.first { $0.id == selectedID } }
     var occupied: Bool { connected || connecting || cleaning }
     var isExtending: Bool { activeHello?.mode == "extend" }
 
+    init(trustStore: TrustStore = TrustStore(), identity: PeerIdentity? = nil) {
+        self.trustStore = trustStore
+        self.localIdentity = identity ?? PeerIdentity.local()
+        super.init()
+        reloadTrustedDevices()
+    }
+    var receivingPort: NWEndpoint.Port? { listener?.port }
+    var selectedPeerIsTrusted: Bool { selectedPeer.map(isTrusted) ?? false }
+    func isTrusted(_ peer: DiscoveredPeer) -> Bool {
+        guard let id = peer.deviceIdentity?.id else { return false }
+        return trustedDevices.contains { $0.peer.id == id }
+    }
+    private func reloadTrustedDevices() {
+        do {
+            var newest: [String: TrustedDevice] = [:]
+            for record in try trustStore.all() {
+                if newest[record.peer.id].map({ $0.createdAt >= record.createdAt }) != true { newest[record.peer.id] = record }
+            }
+            trustedDevices = newest.values.map(\.summary).sorted { $0.peer.name < $1.peer.name }
+        } catch { log(error.appMessage) }
+    }
+    func forgetDevice(_ device: TrustedDeviceSummary) {
+        guard !occupied else { return }
+        do {
+            try trustStore.forgetPeer(device.peer.id)
+            enteredCode = ""
+            reloadTrustedDevices()
+            status = "Forgot \(device.peer.name). Use a new six-digit code to pair again."
+        } catch { status = error.appMessage }
+    }
+    func forgetSelectedDevice() {
+        guard let id = selectedPeer?.deviceIdentity?.id,
+              let device = trustedDevices.first(where: { $0.peer.id == id }) else { return }
+        forgetDevice(device)
+    }
     func log(_ text: LocalizedMessage) {
         events.append(text)
         if events.count > 12 { events.removeFirst(events.count - 12) }
@@ -70,7 +121,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         browser?.cancel()
         peers = []
         selectedID = nil
-        let browser = NWBrowser(for: .bonjour(type: PeerNetwork.serviceType, domain: nil),
+        let browser = NWBrowser(for: .bonjourWithTXTRecord(type: PeerNetwork.serviceType, domain: nil),
                                 using: PeerNetwork.discoveryParameters())
         browser.stateUpdateHandler = { [weak self, weak browser] state in
             DispatchQueue.main.async {
@@ -102,10 +153,17 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     }
     func listen() {
         guard !occupied, !listening else { return }
-        pairingCode = PeerNetwork.newCode()
+        guard pairingGate.issue(at: PairingTime.now) else {
+            status = "Pairing is temporarily paused. Please wait before trying again."
+            return
+        }
+        wantsToListen = true
+        pairingCode = PairingCode.generate(excluding: previousCode)
+        previousCode = pairingCode
         do {
-            let listener = try NWListener(using: PeerNetwork.parameters(code: pairingCode))
-            listener.service = NWListener.Service(name: serviceName, type: PeerNetwork.serviceType)
+            let listener = try NWListener(using: PeerNetwork.parameters())
+            listener.service = NWListener.Service(name: serviceName, type: PeerNetwork.serviceType,
+                txtRecord: NWTXTRecord(["id": localIdentity.id, "pairing": "3"]))
             listener.stateUpdateHandler = { [weak self, weak listener] state in
                 DispatchQueue.main.async {
                     guard let self, let listener, self.listener === listener else { return }
@@ -124,24 +182,87 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
                 DispatchQueue.main.async {
                     guard let self, let listener, self.listener === listener,
                           self.link == nil, !self.cleaning else { connection.cancel(); return }
+                    guard !self.pairingGate.isLocked(at: PairingTime.now) else {
+                        connection.cancel(); return
+                    }
+                    let activeCode = self.pairingGate.accepts(at: PairingTime.now) ? self.pairingCode : nil
                     self.connecting = true
+                    self.sessionAuthenticated = false
                     self.status = "Verifying pairing…"
-                    self.attach(PeerLink(connection))
+                    let store = self.trustStore
+                    self.attach(PeerLink(connection, host: false, code: activeCode, identity: self.localIdentity,
+                        lookupTrusted: { try store.credential(id: $0) }))
                 }
             }
             self.listener = listener
             listener.start(queue: .main)
-        } catch { status = error.appMessage }
+            pairingExpiry?.cancel()
+            pairingExpiry = Task { @MainActor [weak self, weak listener] in
+                do { try await Task.sleep(for: .seconds(PairingGate.lifetime), clock: .continuous) }
+                catch { return }
+                guard let self, let listener, self.listener === listener, !self.sessionAuthenticated else { return }
+                self.expirePairingCode()
+            }
+        } catch {
+            wantsToListen = false
+            pairingCode = ""
+            pairingGate.invalidate()
+            status = error.appMessage
+        }
+    }
+    // Expiry closes the short-code invitation, while already trusted Macs
+    // remain reachable without a new code.
+    func expirePairingCode() {
+        pairingGate.invalidate()
+        pairingCode = ""
+        pairingExpiry?.cancel(); pairingExpiry = nil
+        status = "Code expired. Paired Macs can still connect. Choose New code to pair another Mac."
+    }
+    private func stopAdvertising() {
+        listener?.stateUpdateHandler = nil
+        listener?.newConnectionHandler = nil
+        listener?.cancel(); listener = nil; listening = false
+    }
+    func newPairingCode() {
+        guard !occupied, listening, !pairingCoolingDown else { return }
+        pairingExpiry?.cancel()
+        stopAdvertising()
+        listen()
+    }
+    private func failedPairing() -> Bool {
+        guard pairingGate.failed(at: PairingTime.now) else { return false }
+        wantsToListen = false
+        pairingCode = ""
+        pairingExpiry?.cancel()
+        stopAdvertising()
+        pairingCoolingDown = true
+        pairingCooldown?.cancel()
+        pairingCooldown = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .seconds(PairingGate.cooldown), clock: .continuous) }
+            catch { return }
+            guard let self else { return }
+            self.pairingCoolingDown = false
+            if self.role == .receiver, !self.occupied, !self.listening {
+                self.status = "Ready for a new code. Click Wait for connection."
+            }
+        }
+        return true
     }
     func connect(testOnly: Bool) {
         guard !occupied, let peer = selectedPeer, let interface = peer.directInterface else {
             status = "Select a display with a direct AWDL interface."
             return
         }
+        guard let peerIdentity = peer.deviceIdentity else {
+            status = "Waiting for the display's identity. Search again and use the latest MacPair on both Macs."
+            return
+        }
+        let trusted: TrustedDevice?
+        do { trusted = try trustStore.credential(forPeer: peerIdentity.id); reloadTrustedDevices() }
+        catch { status = error.appMessage; return }
         let code = PeerNetwork.normalize(enteredCode)
-        let allowed = Set("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
-        guard code.count == 12, code.allSatisfy({ allowed.contains($0) }) else {
-            status = "Enter the complete 12-character code shown on the display Mac."
+        guard trusted != nil || PairingCode.isValid(code) else {
+            status = "Enter the six-digit code shown on the display Mac."
             return
         }
         permission = CGPreflightScreenCaptureAccess()
@@ -170,8 +291,9 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         status = "Establishing an encrypted connection over \(interface.name)…"
         log("Connection restricted to \(interface.name); router-network fallback is disabled")
         let connection = NWConnection(to: peer.endpoint,
-            using: PeerNetwork.parameters(code: code, interface: interface))
-        attach(PeerLink(connection))
+            using: PeerNetwork.parameters(interface: interface))
+        attach(PeerLink(connection, host: true, code: trusted == nil ? code : nil, identity: localIdentity,
+            expectedPeer: peerIdentity, trusted: trusted))
     }
     private func attach(_ link: PeerLink) {
         self.link = link
@@ -187,15 +309,41 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         }
         link.onClosed = { [weak self, weak link] reason in
             guard let self, let link, self.link === link else { return }
-            self.endSession(reason: reason)
+            let limited = self.role == .receiver && self.wantsToListen && !self.sessionAuthenticated
+                ? self.failedPairing() : false
+            let reconnectFailed = self.role == .host && link.isResuming && !self.sessionAuthenticated
+            self.endSession(reason: limited
+                ? "Pairing paused after 5 failed attempts. Wait 30 seconds, then start waiting again."
+                : reconnectFailed ? "Could not verify the saved pairing. Check Wi-Fi and the other Mac; if needed, forget this Mac and pair again."
+                : reason)
         }
         link.onReady = { [weak self, weak link] in
             guard let self, let link, self.link === link else { return }
-            self.log("TLS pairing verified")
-            if self.role == .host, let hello = self.requestedHello,
-               let body = try? JSONEncoder().encode(hello) {
-                link.send(.hello, body)
+            self.log("Secure pairing verified · SPAKE2 + AES-256-GCM")
+            self.sessionAuthenticated = true
+            self.enteredCode = ""
+            if self.role == .receiver {
+                self.pairingGate.consume()
+                self.pairingCode = ""
+                self.pairingExpiry?.cancel()
+                self.pairingExpiry = nil
+                self.stopAdvertising()
             }
+            guard let credential = link.authenticatedCredential else {
+                self.endSession(reason: "Invalid saved pairing"); return
+            }
+            self.pendingTrust = credential
+            self.pendingTrustIsNew = !link.isResuming
+            do {
+                if !link.isResuming { try self.trustStore.save(credential) }
+                self.localTrustSaved = true
+            } catch {
+                self.localTrustSaved = false
+                self.log(error.appMessage)
+            }
+            // Wait for both encrypted acknowledgements before advertising a
+            // remembered pairing or starting the display-session handshake.
+            link.send(.trustStatus, Data([self.localTrustSaved ? 1 : 0]))
         }
         link.onPacket = { [weak self, weak link] packet in
             guard let self, let link, self.link === link else { return }
@@ -215,8 +363,31 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     }
     private func handle(_ packet: Packet, link: PeerLink, token: UUID) throws {
         switch packet.kind {
+        case .trustStatus:
+            guard sessionAuthenticated, !receivedTrustStatus, activeHello == nil,
+                  packet.body.count == 1, let value = packet.body.first, value <= 1 else {
+                throw PairError.message("Invalid session sequence")
+            }
+            receivedTrustStatus = true
+            let peerSaved = value == 1
+            if let pendingTrust, pendingTrustIsNew, localTrustSaved {
+                if peerSaved {
+                    try trustStore.forgetPeer(pendingTrust.peer.id, keeping: pendingTrust.id)
+                } else {
+                    try trustStore.forget(id: pendingTrust.id)
+                    localTrustSaved = false
+                }
+            }
+            rememberedSession = localTrustSaved && peerSaved
+            trustConfirmed = rememberedSession
+            reloadTrustedDevices()
+            log(rememberedSession ? "This Mac is remembered. Future connections need no code."
+                : "Connected for this session only. Pair again after allowing Keychain access to remember this Mac.")
+            if role == .host, let requestedHello {
+                link.send(.hello, try JSONEncoder().encode(requestedHello))
+            }
         case .hello:
-            guard role == .receiver, activeHello == nil else { throw PairError.message("Invalid session sequence") }
+            guard role == .receiver, receivedTrustStatus, activeHello == nil else { throw PairError.message("Invalid session sequence") }
             let hello = try JSONDecoder().decode(SessionHello.self, from: packet.body)
             try hello.validateRequest()
             activeHello = hello // Reserve this handshake while full screen settles.
@@ -229,7 +400,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
                 prepareReceiver(link: link, request: hello, token: token)
             }
         case .ready:
-            guard role == .host, activeHello == nil, let requestedHello else {
+            guard role == .host, receivedTrustStatus, activeHello == nil, let requestedHello else {
                 throw PairError.message("Invalid session sequence")
             }
             let hello = try JSONDecoder().decode(SessionHello.self, from: packet.body)
@@ -268,6 +439,8 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         case .failure:
             throw PairError.message("Peer reported: \(String(decoding: packet.body.prefix(512), as: UTF8.self))")
         case .ping, .pong: break // Handled by the transport.
+        case .pairOffer, .pairProof, .sealed:
+            throw PairError.message("Invalid session sequence")
         }
     }
     private func prepareReceiver(link: PeerLink, request: SessionHello, token: UUID) {
@@ -417,6 +590,15 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     }
     private func countFrame() { totalFrames += 1; framesThisSecond += 1 }
     func endSession(reason: LocalizedMessage = "Connection ended") {
+        if pendingTrustIsNew, !trustConfirmed, localTrustSaved, let pendingTrust {
+            do { try trustStore.forget(id: pendingTrust.id) } catch { log(error.appMessage) }
+        }
+        pendingTrust = nil
+        pendingTrustIsNew = false
+        localTrustSaved = false
+        receivedTrustStatus = false
+        trustConfirmed = false
+        rememberedSession = false
         sessionID = UUID()
         helloDeadline?.cancel()
         helloDeadline = nil
@@ -431,6 +613,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         activeHello = nil
         requestedHello = nil
         mirrorDisplayID = nil
+        sessionAuthenticated = false
         receivedWidth = 0; receivedHeight = 0
         displayLayer.flushAndRemoveImage()
         samples.reset()
@@ -455,15 +638,21 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
             // it removes the virtual monitor and macOS brings its windows back.
             oldScreen?.close()
             self.cleaning = false
-            self.status = self.listening ? "\(reason) Waiting for the host to reconnect." : reason
+            if self.role == .receiver, self.wantsToListen, self.listener == nil {
+                self.listen() // A successfully used code is replaced before reconnecting.
+            } else {
+                self.status = self.listening ? "\(reason) Waiting for the host to reconnect." : reason
+            }
             self.log(reason)
         }
     }
     func stopAll(reason: LocalizedMessage = "Stopped") {
         browser?.cancel(); browser = nil; browsing = false
-        listener?.stateUpdateHandler = nil
-        listener?.newConnectionHandler = nil
-        listener?.cancel(); listener = nil; listening = false
+        wantsToListen = false
+        pairingGate.invalidate()
+        pairingCode = ""
+        pairingExpiry?.cancel(); pairingExpiry = nil
+        stopAdvertising()
         peers = []; selectedID = nil
         endSession(reason: reason)
     }
@@ -510,7 +699,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         updateViewerHUD()
     }
     func copyDiagnostics() {
-        let text = (["MacPair 0.1.5", ProcessInfo.processInfo.operatingSystemVersionString,
+        let text = (["MacPair 0.1.6", ProcessInfo.processInfo.operatingSystemVersionString,
                      L10n.text(role.rawValue), status.localized, path.localized, "RTT \(rtt), frames \(totalFrames), fps \(fps)"] + events.map(\.localized)).joined(separator: "\n")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)

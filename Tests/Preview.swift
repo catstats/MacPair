@@ -40,7 +40,7 @@ enum Preview {
                     continue
                 }
                 for receiver in ((searching || mirrorMode) ? [false] : [false, true]) {
-                    let model = AppModel()
+                    let model = AppModel(trustStore: TrustStore(memoryOnly: true), identity: PeerIdentity(id: "00000000-0000-0000-0000-000000000001", name: "Preview Mac"))
                     model.language = language
                     if mirrorMode { model.displayMode = .mirror }
                     if searching {
@@ -49,7 +49,7 @@ enum Preview {
                     } else if receiver {
                         model.role = .receiver
                         model.listening = true
-                        model.pairingCode = "ABCD-EFGH-JKLM"
+                        model.pairingCode = "024681"
                         model.status = "Waiting for the host. Select this Mac on the host and enter the pairing code below."
                     }
                     let hosting = NSHostingView(rootView: MainView(model: model)
