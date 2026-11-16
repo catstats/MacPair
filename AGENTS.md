@@ -8,11 +8,12 @@ MacPair is a native Swift macOS app. Its default UI language is English; Simplif
 - Resources/: application identity and localized permission descriptions.
 - Tests/: native component preview fixtures.
 - scripts/: build, test, preview, and packaging commands.
-- build/: generated App, archives, and caches, ignored by Git.
+- build/: generated ZIP archives and preview images, ignored by Git.
+- iCloud checkouts keep generated app bundles/compiler caches under ~/Library/Caches/MacPair/<project-id> to preserve their signatures. scripts/project-paths.sh resolves all paths.
 
 ## Build and validate
 
-Use ./scripts/build.sh for a universal arm64/x86_64 App; --native builds only this Mac's architecture. Run ./scripts/test.sh for local protocol, TLS, sizing, and real H.264 checks when those components change. The optional --display flag temporarily creates and removes a virtual screen. Preview UI changes with ./scripts/preview.sh; --searching and --mirror cover the added UI states. Package with ./scripts/package.sh.
+Use ./scripts/build.sh for a universal arm64/x86_64 App; --native builds only this Mac's architecture. Run ./scripts/test.sh for local protocol, TLS, sizing, and real H.264 checks when those components change. The optional --display flag temporarily creates and removes a virtual screen. Preview UI changes with ./scripts/preview.sh; --searching and --mirror cover the added UI states. Package with ./scripts/package.sh. MACPAIR_BUILD_ROOT optionally overrides the generated-app/cache directory; MACPAIR_APP_PATH overrides the app path.
 
 Keep local.macpair.prototype stable for macOS permission continuity. Mirror captures the existing main display. Extend creates and later removes a CGVirtualDisplay. Preserve that distinction and cleanup behavior. The transport currently restricts connections to discovered AWDL interfaces.
 

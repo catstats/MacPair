@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")"
-if [[ ! -d build/MacPair.app ]]; then ./scripts/build.sh; fi
-open "$PWD/build/MacPair.app"
+source scripts/project-paths.sh
+if [[ ! -d "$task_app_path" ]]; then ./scripts/build.sh; fi
+open "$task_app_path"

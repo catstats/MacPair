@@ -8,7 +8,7 @@
 
 ## 打开原型
 
-已经构建的 App：`build/MacPair.app`。在 Finder 中双击，或双击项目根目录的「Start MacPair.command」。
+双击项目根目录的「Start MacPair.command」即可启动。iCloud 项目的运行 App 与编译缓存保存在本机 ~/Library/Caches/MacPair/<项目编号>，启动器会自动定位；构建命令也会显示完整 App 路径。普通本地目录仍默认使用 build/MacPair.app。
 
 把 `build/MacPair-0.1.2.zip` 复制到另一台 Mac，解压后打开其中的 MacPair.app。包内附完整源码。另一台 Mac 不需要安装 Xcode。
 
@@ -107,7 +107,7 @@ TLS-PSK / TCP ─── AWDL 点对点 Wi-Fi ───→ 解码与全屏显示
 
 ## 后续修改和提交
 
-在本项目中修改源码，按前面的命令构建和检查。可直接运行的 App 与 AirDrop 安装包放在 build/，已被 Git 忽略。
+在本项目中修改源码，按前面的命令构建和检查。AirDrop 安装包与界面预览放在 build/，已被 Git 忽略。iCloud 项目的运行 App 和编译缓存保存在本机缓存目录，避免云同步附加的 Finder 元数据影响签名；各脚本统一使用 scripts/project-paths.sh 定位。
 
 ```bash
 git status

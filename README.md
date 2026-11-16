@@ -8,7 +8,7 @@ The local protocol, TLS, H.264, and virtual-display checks have passed on the de
 
 ## Start here
 
-Open `build/MacPair.app`, or double-click `Start MacPair.command`.
+Double-click `Start MacPair.command`. In an iCloud checkout the runnable App is kept in this Mac's local cache; the launcher finds it automatically. Outside iCloud, the default App path is `build/MacPair.app`.
 
 To use a second Mac, copy `build/MacPair-0.1.2.zip` to it, unzip it, and open MacPair.app. The package includes the full source. The second Mac does not need Xcode.
 
@@ -81,7 +81,7 @@ No downloaded packages, cloud services, or paid developer account are needed. Th
 ./scripts/package.sh           # app + guides + complete source
 ```
 
-Tests use generated image data and loopback networking. The optional `build/MacPair.app/Contents/MacOS/MacPair --mirror-smoke-test` reads one main-screen frame only if this app already has Screen Recording permission; otherwise it skips without requesting permission. It saves and sends no image. They do not automatically grant permissions or capture your existing desktop.
+Tests use generated image data and loopback networking. The optional Mirror check uses the App path printed by build.sh with `/Contents/MacOS/MacPair --mirror-smoke-test` appended. It reads one main-screen frame only if this app already has Screen Recording permission; otherwise it skips without requesting permission. It saves and sends no image. They do not automatically grant permissions or capture your existing desktop.
 
 Build first, then grant Screen Recording and restart. Avoid rebuilding/re-signing the app during a permission test session. Bundle ID: `local.macpair.prototype`.
 
@@ -115,7 +115,7 @@ Extend is fixed at 1280 × 800, 1× scaling. Mirror scales the main screen to fi
 
 ## Development workflow
 
-Edit the source in this project, then use the build/check commands above. The current runnable App and AirDrop archive are in build/ and are ignored by Git.
+Edit the source in this project, then use the build/check commands above. AirDrop archives and UI previews are saved to build/ and ignored by Git. In iCloud checkouts, generated Apps and compiler caches are kept in ~/Library/Caches/MacPair/<project-id>; build.sh prints the exact App path. This avoids Finder metadata from cloud synchronization invalidating the app signature. The shared scripts/project-paths.sh keeps build, test, preview, package and launch commands consistent.
 
 ```bash
 git status
