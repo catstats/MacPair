@@ -26,7 +26,7 @@ struct MainView: View {
                     Picker(L("Language"), selection: $model.language) {
                         ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
                     }.frame(width: 185)
-                    Text(L("Prototype 0.1.2")).font(.caption).padding(7).background(.blue.opacity(0.1), in: Capsule())
+                    Text(L("Prototype 0.1.3")).font(.caption).padding(7).background(.blue.opacity(0.1), in: Capsule())
                 }
                 Text(L("No router, internet, or Apple ID needed. Keep Wi-Fi on; Bluetooth is recommended."))
                     .font(.callout).foregroundStyle(.secondary)
@@ -80,13 +80,19 @@ struct MainView: View {
     }
     private var hostPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker(L("Display mode"), selection: $model.displayMode) {
-                ForEach(DisplayMode.allCases) { mode in
-                    Text(L10n.text(mode.title)).tag(mode)
+            HStack(spacing: 12) {
+                Text(L("Display mode"))
+                Picker(L("Display mode"), selection: $model.displayMode) {
+                    ForEach(DisplayMode.allCases) { mode in
+                        Text(L10n.text(mode.title)).tag(mode)
+                    }
                 }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 160)
+                .disabled(model.occupied)
+                Spacer()
             }
-            .pickerStyle(.segmented)
-            .disabled(model.occupied)
             Text(L(model.displayMode == .mirror
                 ? "Mirror shows the host's main screen on the display Mac."
                 : "Extend adds a separate desktop; drag windows onto it."))

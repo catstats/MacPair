@@ -10,7 +10,7 @@
 
 双击项目根目录的「Start MacPair.command」即可启动。iCloud 项目的运行 App 与编译缓存保存在本机 ~/Library/Caches/MacPair/<项目编号>，启动器会自动定位；构建命令也会显示完整 App 路径。普通本地目录仍默认使用 build/MacPair.app。
 
-把 `build/MacPair-0.1.2.zip` 复制到另一台 Mac，解压后打开其中的 MacPair.app。包内附完整源码。另一台 Mac 不需要安装 Xcode。
+把 `build/MacPair-0.1.3.zip` 复制到另一台 Mac，解压后打开其中的 MacPair.app。包内附完整源码。另一台 Mac 不需要安装 Xcode。
 
 要求：两端 macOS 13 或以上，支持 Apple 点对点 Wi-Fi 的无线硬件。提供 arm64 和 x86_64 通用构建；开发环境是 Apple Silicon；用户验收设备的处理器与系统版本尚未单独记录。
 
@@ -18,7 +18,7 @@ App 使用本地临时签名，没有 Apple 公证。如果系统拦截自己构
 
 ## 选择镜像或扩展
 
-两台 Mac 都更新到 **0.1.2**。主机在连接前选择模式：
+两台 Mac 都更新到 **0.1.3**。主机在连接前选择模式：
 
 - **Mirror（镜像）**：显示主机现有主屏幕，保留屏幕比例缩放，不创建虚拟显示器；点击 **Mirror display（开始镜像）**。
 - **Extend（扩展）**：创建独立的 1280 × 800 桌面，可以把窗口拖过去；点击 **Extend display（开始扩展）**。
