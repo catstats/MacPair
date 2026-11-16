@@ -58,7 +58,8 @@ struct DiscoveredPeer: Identifiable {
 /// configurable so the command-line tests don't depend on a GUI run loop.
 final class PeerLink {
     let connection: NWConnection
-    private let queue = DispatchQueue(label: "MacPair.wire")
+    private let queue = DispatchQueue(label: "MacPair.wire", qos: .userInteractive)
+    private var mediaHandler: ((Packet) -> Bool)?
     private let callbackQueue: DispatchQueue
     private var parser = PacketParser()
     private var timer: DispatchSourceTimer?
@@ -151,6 +152,9 @@ final class PeerLink {
         guard let path else { return }
         let names = path.availableInterfaces.map(\.name).joined(separator: ", ")
         deliver { $0.onPath?("Network path: \(names.isEmpty ? "waiting for interface" : names)") }
+    }
+    func setMediaHandler(_ handler: ((Packet) -> Bool)?) {
+        queue.async { [weak self] in self?.mediaHandler = handler }
     }
     func send(_ kind: PacketKind, _ body: Data = Data(), completion: ((Bool) -> Void)? = nil) {
         guard body.count + PacketCipher.overhead + 1 <= Wire.maximumPacket else { completion?(false); return }
@@ -258,7 +262,7 @@ final class PeerLink {
                                 let ms = Double(now - stamp) / 1_000_000
                                 self.deliver { $0.onRTT?(ms) }
                             }
-                        } else {
+                        } else if self.mediaHandler?(packet) != true {
                             self.deliver { $0.onPacket?(packet) }
                         }
                     }
@@ -296,6 +300,7 @@ final class PeerLink {
         exchange = nil
         pendingKeys = nil
         cipher = nil
+        mediaHandler = nil
         deadline?.cancel()
         timer?.cancel()
         timer = nil

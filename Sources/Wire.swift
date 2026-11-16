@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import Foundation
 
-enum PacketKind: UInt8 { case hello = 1, ready, ping, pong, format, video, failure, pairOffer, pairProof, sealed, trustStatus }
-struct Packet { let kind: PacketKind; let body: Data }
+enum PacketKind: UInt8 { case hello = 1, ready, ping, pong, format, video, failure, pairOffer, pairProof, sealed, trustStatus, videoFrame, videoAck }
+struct Packet { let kind: PacketKind; let body: Data; let receivedAt = DispatchTime.now().uptimeNanoseconds }
 
 enum PairError: LocalizedError {
     case message(LocalizedMessage)
@@ -164,15 +164,16 @@ struct SessionHello: Codable, Equatable {
     let resolution: ResolutionPreset
     let receiver: ReceiverDisplayInfo?
     let canvas: VirtualCanvas?
+    let pipeline: VideoPipelineOptions?
     var isVideo: Bool { DisplayMode(rawValue: mode) != nil }
 
     init(version: Int, mode: String, width: Int, height: Int, fps: Int,
          resolution: ResolutionPreset = .recommended, receiver: ReceiverDisplayInfo? = nil,
-         canvas: VirtualCanvas? = nil) {
+         canvas: VirtualCanvas? = nil, pipeline: VideoPipelineOptions? = nil) {
         self.version = version; self.mode = mode; self.width = width; self.height = height; self.fps = fps
-        self.resolution = resolution; self.receiver = receiver; self.canvas = canvas
+        self.resolution = resolution; self.receiver = receiver; self.canvas = canvas; self.pipeline = pipeline
     }
-    private enum CodingKeys: String, CodingKey { case version, mode, width, height, fps, resolution, receiver, canvas }
+    private enum CodingKeys: String, CodingKey { case version, mode, width, height, fps, resolution, receiver, canvas, pipeline }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         version = try values.decode(Int.self, forKey: .version)
@@ -184,6 +185,7 @@ struct SessionHello: Codable, Equatable {
         resolution = try values.decodeIfPresent(ResolutionPreset.self, forKey: .resolution) ?? .recommended
         receiver = try values.decodeIfPresent(ReceiverDisplayInfo.self, forKey: .receiver)
         canvas = try values.decodeIfPresent(VirtualCanvas.self, forKey: .canvas)
+        pipeline = try values.decodeIfPresent(VideoPipelineOptions.self, forKey: .pipeline)
     }
     func validate() throws {
         guard version == Wire.version else {
@@ -193,9 +195,11 @@ struct SessionHello: Codable, Equatable {
         let maxHeight = mode == "extend" ? 5120 : 800
         guard ["diagnostic", "extend", "mirror"].contains(mode),
               (16...maxWidth).contains(width), (16...maxHeight).contains(height),
-              width * height <= 16_777_216, width % 2 == 0, height % 2 == 0, (1...30).contains(fps) else {
+              width * height <= 16_777_216, width % 2 == 0, height % 2 == 0, (1...(pipeline == nil ? 30 : 60)).contains(fps) else {
             throw PairError.message("Incompatible protocol version or display settings")
         }
+        try pipeline?.validate()
+        guard pipeline == nil || isVideo else { throw PairError.message("Unsupported video feedback settings") }
         try receiver?.validate()
         try canvas?.validate()
     }
@@ -206,13 +210,14 @@ struct SessionHello: Codable, Equatable {
             throw PairError.message("The display returned incompatible parameters")
         }
     }
-    func negotiated(for display: ReceiverDisplayInfo) throws -> SessionHello {
+    func negotiated(for display: ReceiverDisplayInfo, supportsFeedback: Bool = true) throws -> SessionHello {
         try validateRequest()
         guard isVideo else { return self }
         try display.validate()
         let canvas = mode == "extend" ? try ResolutionSizing.canvas(for: display, preset: resolution) : nil
+        let agreedPipeline = supportsFeedback ? pipeline : nil
         let result = SessionHello(version: version, mode: mode, width: canvas?.pixelWidth ?? width,
-            height: canvas?.pixelHeight ?? height, fps: fps, resolution: resolution, receiver: display, canvas: canvas)
+            height: canvas?.pixelHeight ?? height, fps: agreedPipeline?.frameRate ?? fps, resolution: resolution, receiver: display, canvas: canvas, pipeline: agreedPipeline)
         try result.validate()
         return result
     }
@@ -222,7 +227,7 @@ struct SessionHello: Codable, Equatable {
         let expected: SessionHello
         if request.isVideo {
             guard let receiver else { throw PairError.message("The display returned incompatible parameters") }
-            expected = try request.negotiated(for: receiver)
+            expected = try request.negotiated(for: receiver, supportsFeedback: pipeline != nil)
         } else { expected = request }
         guard self == expected else { throw PairError.message("The display returned incompatible parameters") }
     }

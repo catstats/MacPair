@@ -36,6 +36,8 @@ enum DiagnosticTests {
             print("PASS: Mirror/Extend negotiation and aspect-preserving screen sizes")
             try retinaNegotiation()
             print("PASS: receiver logical/backing sizing, 1×/2× presets and tampered-handshake rejection")
+            try videoFlowValidation()
+            print("PASS: 60 fps capability negotiation, legacy fallback and bounded authenticated frame credits")
             try shortCodePairing()
             print("PASS: six-digit policy, expiry, lockout, SPAKE2 confirmation, tamper and replay rejection")
             try encryptedLoopback()
@@ -43,6 +45,7 @@ enum DiagnosticTests {
             try videoRoundtrip()
             try videoRoundtrip(width: 1230, height: 800)
             try videoRoundtrip(width: 2560, height: 1664)
+            try videoRoundtrip(width: 1230, height: 800, nv12: true)
             print("PASS: real H.264 encode/decode at 320×200, 1230×800 and Retina 2560×1664")
             print("Local tests passed. Two-Mac AWDL and ScreenCaptureKit capture are NOT covered by loopback.")
             exit(0)
@@ -224,6 +227,56 @@ enum DiagnosticTests {
         do { try decoded.validateRequest() } catch { rejected = true }
         try expect(rejected, "A legacy peer must be told to update")
     }
+    private static func videoFlowValidation() throws {
+        let geometry = DisplayGeometry(logicalWidth: 1280, logicalHeight: 832,
+            backingWidth: 2560, backingHeight: 1664, scale: 2)
+        let display = ReceiverDisplayInfo(name: "Generated display", screen: geometry, viewport: geometry)
+        let request = SessionHello(version: Wire.version, mode: "extend", width: 1280, height: 800, fps: 30,
+            pipeline: VideoPipelineOptions())
+        let response = try request.negotiated(for: display)
+        try response.validateResponse(to: request)
+        try expect(response.fps == 60 && response.width == 2560 && response.height == 1664,
+                   "Feedback negotiation changed Retina sizing or failed to request 60 fps")
+        var oldJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as! [String: Any]
+        oldJSON.removeValue(forKey: "pipeline")
+        let oldRequest = try JSONDecoder().decode(SessionHello.self, from: JSONSerialization.data(withJSONObject: oldJSON))
+        let oldResponse = try oldRequest.negotiated(for: display)
+        try oldResponse.validateResponse(to: request)
+        try expect(oldResponse.fps == 30 && oldResponse.pipeline == nil, "Legacy peers lost their 30 fps fallback")
+        var rejected = false
+        do { try response.validateResponse(to: oldRequest) } catch { rejected = true }
+        try expect(rejected, "A peer enabled unrequested feedback")
+        for options in [VideoPipelineOptions(version: 2), VideoPipelineOptions(maximumFrames: 99), VideoPipelineOptions(frameRate: -1)] {
+            rejected = false
+            do { try SessionHello(version: Wire.version, mode: "extend", width: 1280, height: 800, fps: 30, pipeline: options).validateRequest() }
+            catch { rejected = true }
+            try expect(rejected, "Invalid video capabilities were accepted")
+        }
+        var window = VideoFrameWindow(limit: 2)
+        let first = window.reserve(capturedAt: 100)!, second = window.reserve(capturedAt: 200)!
+        try expect(window.reserve(capturedAt: 300) == nil, "More than two frames entered the pipeline")
+        try window.encoded(first, at: 150); try window.encoded(second, at: 250)
+        rejected = false
+        do { _ = try window.retire(second, ordered: true) } catch { rejected = true }
+        try expect(rejected && window.count == 2, "Out-of-order feedback freed a credit")
+        _ = try window.retire(first, ordered: true)
+        let third = window.reserve(capturedAt: 300)!
+        for id in [first, third, 999] {
+            rejected = false
+            do { _ = try window.retire(id, ordered: true) } catch { rejected = true }
+            try expect(rejected, "Duplicate, future or unencoded feedback was accepted")
+        }
+        _ = try window.retire(second, ordered: true)
+        try window.encoded(third, at: 350); _ = try window.retire(third, ordered: true)
+        try expect(window.count == 0, "Video credits were not released")
+        let ack = VideoAcknowledgement(id: 7, dispatchUS: 1, sampleUS: 2, rendererWaitUS: 3)
+        let decoded = try VideoAcknowledgement(ack.data)
+        try expect(decoded.id == 7 && decoded.rendererWaitUS == 3, "Video feedback framing failed")
+        rejected = false
+        do { _ = try VideoAcknowledgement(Data(repeating: 0, count: 20)) } catch { rejected = true }
+        try expect(rejected, "A zero video acknowledgement was accepted")
+    }
+
     private static func shortCodePairing() throws {
         for _ in 0..<1000 { try expect(PairingCode.isValid(PairingCode.generate()), "Generated an invalid numeric code") }
         for valid in ["000000", "000123", "024 681", "024-681"] {
@@ -394,7 +447,7 @@ enum DiagnosticTests {
         let wrongResult = wrongClosed.wait(timeout: .now() + 8)
         try expect(wrongResult == .success && !wrongWasReady, "Wrong six-digit code was not rejected")
     }
-    private static func videoRoundtrip(width: Int = 320, height: Int = 200) throws {
+    private static func videoRoundtrip(width: Int = 320, height: Int = 200, nv12: Bool = false) throws {
         let ready = DispatchSemaphore(value: 0)
         var configuration: Data?
         var video: Data?
@@ -405,12 +458,21 @@ enum DiagnosticTests {
             configuration = format; video = data; encodeError = error; ready.signal()
         }
         var image: CVPixelBuffer?
-        try expect(CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA,
+        try expect(CVPixelBufferCreate(kCFAllocatorDefault, width, height,
+            nv12 ? kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange : kCVPixelFormatType_32BGRA,
             [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &image) == kCVReturnSuccess,
             "无法创建测试像素缓冲")
         guard let image else { throw PairError.message("测试画面不存在") }
         CVPixelBufferLockBaseAddress(image, [])
-        if let base = CVPixelBufferGetBaseAddress(image) {
+        if nv12 {
+            let yBase = CVPixelBufferGetBaseAddressOfPlane(image, 0)!
+            let uvBase = CVPixelBufferGetBaseAddressOfPlane(image, 1)!.assumingMemoryBound(to: UInt16.self)
+            let yStride = CVPixelBufferGetBytesPerRowOfPlane(image, 0)
+            let uvStride = CVPixelBufferGetBytesPerRowOfPlane(image, 1) / 2
+            for y in 0..<height { memset(yBase + y * yStride, 96, width) }
+            for y in 0..<(height / 2) { (uvBase + y * uvStride).initialize(repeating: 0xc163, count: width / 2) }
+            CVBufferSetAttachment(image, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, .shouldPropagate)
+        } else if let base = CVPixelBufferGetBaseAddress(image) {
             let pointer = base.assumingMemoryBound(to: UInt8.self)
             let row = CVPixelBufferGetBytesPerRow(image)
             for y in 0..<height {
@@ -792,6 +854,8 @@ enum MacPairLauncher {
     @MainActor
     static func main() {
         setbuf(stdout, nil)
+        if CommandLine.arguments.contains("--video-pipeline-test") { VideoPipelineCheck.run() }
+        if CommandLine.arguments.contains("--performance-test") { VideoBenchmark.run() }
         if CommandLine.arguments.contains("--self-test") { DiagnosticTests.run() }
         if CommandLine.arguments.contains("--display-smoke-test") { DiagnosticTests.displaySmokeTest() }
         if CommandLine.arguments.contains("--pairing-smoke-test") { DiagnosticTests.pairingSmokeTest() }

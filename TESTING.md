@@ -4,6 +4,29 @@ Version 0.1.1 adds a white highlight sweeping over the stationary gray searching
 
 [中文测试指南](TESTING.zh-CN.md) · [Quick start](README.md)
 
+## Version 0.1.9: bounded low-latency video
+
+Local checks on 2026-11-17 cover:
+
+- Optional capability negotiation: 60 fps / two-frame feedback with new peers, unchanged Retina dimensions, and 30 fps interoperability with 0.1.6–0.1.8. Invalid options and unsolicited feedback are rejected.
+- Ordered frame IDs and encrypted ACKs. Duplicate, future, unencoded and out-of-order acknowledgements cannot release credits.
+- Real H.264 encode/decode at the earlier three sizes plus a Rec.709 NV12 red-color roundtrip at 1230 × 800.
+- Actual generated 2560 × 1664 H.264 over the authenticated encrypted loopback into the production receiver/system display layer. Artificial 35 ms ACK delay forces raw-capture replacement. Every encoded frame is submitted/acknowledged in order; sender and receiver peaks remain at two frames.
+- The generated-video check opens a small test-pattern window, uses no virtual display and captures no desktop. Codec benchmark uses generated patterns only. Its timings exclude capture/AWDL/presentation.
+
+Controlled generated-frame measurements (mean / p95 encode milliseconds; 90 frames per case, first five excluded):
+
+| Size | Ordinary encoder, BGRA | Ordinary encoder, NV12 | Low-latency encoder, NV12 |
+| --- | --- | --- | --- |
+| 1230 × 800 | 4.66 / 5.15 | 4.82 / 6.47 | 5.49 / 7.11 |
+| 2560 × 1664 | 14.00 / 16.21 | 10.63 / 11.73 | 11.13 / 12.81 |
+
+The low-latency selection is not faster in every codec-only case. The principal responsiveness changes are bounded receiver feedback, latest-raw admission, encode/send overlap and removal of per-frame UI publishing. Full results and scope are in Tests/Performance-0.1.9.json.
+
+Physical acceptance remains required: update both Macs to 0.1.9, retain the same resolution preset, then drag/scroll continuously for 10–15 seconds in Mirror and Extend. Record the negotiated pixel dimensions, capture/encode/send/ACK rates, mean/p95 and receiver wait from both diagnostics. Repeat under normal and busy wireless conditions. Check clean disconnect, full-screen resizing, saved pairing and older-version 30 fps fallback.
+
+The baseline's measured codec times do not establish end-to-end latency or a promised wireless FPS. ACK timing ends at receiver submission and includes the return trip. Static-screen update counts are not a performance benchmark. The RTVC encoder returned hardware-query status -12900 (unsupported); hardware was required during its successful creation, and the unavailable query is not reported as “software”.
+
 ## Version 0.1.8: automatic discovery and nearby cards
 
 - First choose Display Mac on the receiving Mac. It starts waiting. Reopen both apps: the last roles should restore, with the host searching and the display waiting.

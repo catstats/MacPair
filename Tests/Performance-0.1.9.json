@@ -1,0 +1,205 @@
+{
+  "version": "0.1.9",
+  "recordedAt": "2026-11-17T02:13:23+08:00",
+  "environment": {
+    "macOS": "15.5",
+    "architecture": "arm64"
+  },
+  "scope": "90 generated frames per case; first 5 warmup frames excluded. No screen capture, AWDL, or physical presentation measurement.",
+  "control": {
+    "framesPerCase": 90,
+    "results": [
+      {
+        "decodeMS": {
+          "mean": 1.0184128000000001,
+          "p95": 1.587584
+        },
+        "encodeMS": {
+          "mean": 4.656944152941176,
+          "p95": 5.145625
+        },
+        "encoderDetails": "encoder=com.apple.videotoolbox.videoencoder.ave.avc, hardware-query=0, value=1",
+        "hardwareDecode": true,
+        "hardwareEncode": "yes",
+        "hardwareRequired": false,
+        "height": 800,
+        "input": "BGRA",
+        "lowLatency": false,
+        "meanEncodedBytes": 754,
+        "sampleBuildMS": {
+          "mean": 0.010895517647058824,
+          "p95": 0.023334
+        },
+        "width": 1230
+      },
+      {
+        "decodeMS": {
+          "mean": 1.1250681294117648,
+          "p95": 2.315333
+        },
+        "encodeMS": {
+          "mean": 4.8185206,
+          "p95": 6.473
+        },
+        "encoderDetails": "encoder=com.apple.videotoolbox.videoencoder.ave.avc, hardware-query=0, value=1",
+        "hardwareDecode": true,
+        "hardwareEncode": "yes",
+        "hardwareRequired": false,
+        "height": 800,
+        "input": "NV12/420v",
+        "lowLatency": false,
+        "meanEncodedBytes": 754,
+        "sampleBuildMS": {
+          "mean": 0.015354905882352941,
+          "p95": 0.042666
+        },
+        "width": 1230
+      },
+      {
+        "decodeMS": {
+          "mean": 2.577048011764707,
+          "p95": 4.170958
+        },
+        "encodeMS": {
+          "mean": 14.004264764705884,
+          "p95": 16.212583
+        },
+        "encoderDetails": "encoder=com.apple.videotoolbox.videoencoder.ave.avc, hardware-query=0, value=1",
+        "hardwareDecode": true,
+        "hardwareEncode": "yes",
+        "hardwareRequired": false,
+        "height": 1664,
+        "input": "BGRA",
+        "lowLatency": false,
+        "meanEncodedBytes": 2618,
+        "sampleBuildMS": {
+          "mean": 0.05972302352941176,
+          "p95": 0.092
+        },
+        "width": 2560
+      },
+      {
+        "decodeMS": {
+          "mean": 2.493388188235294,
+          "p95": 3.91525
+        },
+        "encodeMS": {
+          "mean": 10.629465717647061,
+          "p95": 11.729917
+        },
+        "encoderDetails": "encoder=com.apple.videotoolbox.videoencoder.ave.avc, hardware-query=0, value=1",
+        "hardwareDecode": true,
+        "hardwareEncode": "yes",
+        "hardwareRequired": false,
+        "height": 1664,
+        "input": "NV12/420v",
+        "lowLatency": false,
+        "meanEncodedBytes": 2618,
+        "sampleBuildMS": {
+          "mean": 0.03564898823529411,
+          "p95": 0.071084
+        },
+        "width": 2560
+      }
+    ],
+    "scope": "synthetic codec only; excludes screen capture, AWDL and presentation"
+  },
+  "lowLatency": {
+    "framesPerCase": 90,
+    "results": [
+      {
+        "decodeMS": {
+          "mean": 0.9679205058823537,
+          "p95": 1.184375
+        },
+        "encodeMS": {
+          "mean": 4.975894670588236,
+          "p95": 5.70725
+        },
+        "encoderDetails": "encoder=com.apple.videotoolbox.videoencoder.h264.rtvc, hardware-query=-12900, value=nil",
+        "hardwareDecode": true,
+        "hardwareEncode": "unreported",
+        "hardwareRequired": true,
+        "height": 800,
+        "input": "BGRA",
+        "lowLatency": true,
+        "meanEncodedBytes": 763,
+        "sampleBuildMS": {
+          "mean": 0.011732329411764705,
+          "p95": 0.01775
+        },
+        "width": 1230
+      },
+      {
+        "decodeMS": {
+          "mean": 1.1767397294117647,
+          "p95": 1.868667
+        },
+        "encodeMS": {
+          "mean": 5.489940741176471,
+          "p95": 7.108042
+        },
+        "encoderDetails": "encoder=com.apple.videotoolbox.videoencoder.h264.rtvc, hardware-query=-12900, value=nil",
+        "hardwareDecode": true,
+        "hardwareEncode": "unreported",
+        "hardwareRequired": true,
+        "height": 800,
+        "input": "NV12/420v",
+        "lowLatency": true,
+        "meanEncodedBytes": 763,
+        "sampleBuildMS": {
+          "mean": 0.020344564705882355,
+          "p95": 0.061709
+        },
+        "width": 1230
+      },
+      {
+        "decodeMS": {
+          "mean": 2.541489682352942,
+          "p95": 4.579334
+        },
+        "encodeMS": {
+          "mean": 14.843582870588238,
+          "p95": 16.538041
+        },
+        "encoderDetails": "encoder=com.apple.videotoolbox.videoencoder.h264.rtvc, hardware-query=-12900, value=nil",
+        "hardwareDecode": true,
+        "hardwareEncode": "unreported",
+        "hardwareRequired": true,
+        "height": 1664,
+        "input": "BGRA",
+        "lowLatency": true,
+        "meanEncodedBytes": 2627,
+        "sampleBuildMS": {
+          "mean": 0.03677547058823529,
+          "p95": 0.087958
+        },
+        "width": 2560
+      },
+      {
+        "decodeMS": {
+          "mean": 1.9166765411764706,
+          "p95": 2.361
+        },
+        "encodeMS": {
+          "mean": 11.132691223529413,
+          "p95": 12.806917
+        },
+        "encoderDetails": "encoder=com.apple.videotoolbox.videoencoder.h264.rtvc, hardware-query=-12900, value=nil",
+        "hardwareDecode": true,
+        "hardwareEncode": "unreported",
+        "hardwareRequired": true,
+        "height": 1664,
+        "input": "NV12/420v",
+        "lowLatency": true,
+        "meanEncodedBytes": 2627,
+        "sampleBuildMS": {
+          "mean": 0.016074929411764707,
+          "p95": 0.031625
+        },
+        "width": 2560
+      }
+    ],
+    "scope": "synthetic codec only; excludes screen capture, AWDL and presentation"
+  }
+}

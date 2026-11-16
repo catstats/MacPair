@@ -18,3 +18,7 @@ fi
 if [[ "${1:-}" == "--discovery" ]]; then
     "$app_binary" --nearby-panel-smoke-test
 fi
+
+if [[ "${1:-}" == "--video" ]]; then
+    "$app_binary" --video-pipeline-test
+fi

@@ -29,7 +29,7 @@ struct MainView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(alignment: .firstTextBaseline, spacing: 9) {
                             Text("MacPair").font(.title2.bold())
-                            Text(L("Prototype 0.1.8")).font(.caption).foregroundStyle(.secondary)
+                            Text(L("Prototype 0.1.9")).font(.caption).foregroundStyle(.secondary)
                         }
                         Text(L("Your nearby Mac. Your second display.")).font(.caption).foregroundStyle(.secondary)
                     }
@@ -70,6 +70,12 @@ struct MainView: View {
                 DisclosureGroup(L("Diagnostics"), isExpanded: $diagnosticsExpanded) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(model.path.localized).font(.caption.monospaced())
+                        if !model.videoPerformance.isEmpty {
+                            Text(model.videoPerformance).font(.caption.monospaced()).textSelection(.enabled)
+                        } else if let previous = model.lastSession?.performance {
+                            Text(L("Last session")).font(.caption.bold())
+                            Text(previous).font(.caption.monospaced()).textSelection(.enabled)
+                        }
                         if model.connected {
                             Text(L("Round trip \(model.rtt)")).font(.caption.monospaced())
                             Text(L("\(model.fps) fps · \(model.totalFrames) frames")).font(.caption.monospaced())
@@ -132,7 +138,7 @@ struct MainView: View {
                     .font(.headline).foregroundStyle(model.connected ? .green : .primary)
                 Spacer()
                 if model.connected {
-                    if !model.diagnostic { Text(L("\(model.fps) fps")) }
+                    if !model.diagnostic { Text(L("\(model.fps) fps")).help(L("Video updates per second. A still desktop can report fewer frames.")) }
                     if model.rtt != "—" { Text(L("Round trip \(model.rtt)")) }
                 }
             }

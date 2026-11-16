@@ -13,23 +13,36 @@ final class H264Encoder {
     private var sequence: Int64 = 0
     let fps: Int
     let bitrate: Int
+    private(set) var lowLatencyEnabled = false
     var onOutput: ((Data?, Data?, LocalizedMessage?) -> Void)?
-    init(width: Int, height: Int, fps: Int) throws {
+    init(width: Int, height: Int, fps: Int, lowLatency: Bool = true) throws {
         self.fps = fps
         bitrate = min(45_000_000, max(8_000_000, Int(Double(width) * Double(height) * Double(fps) * 0.18)))
         var result: VTCompressionSession?
-        let specification = [kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder: true] as CFDictionary
-        let status = VTCompressionSessionCreate(allocator: kCFAllocatorDefault,
-            width: Int32(width), height: Int32(height), codecType: kCMVideoCodecType_H264,
-            encoderSpecification: specification, imageBufferAttributes: nil,
-            compressedDataAllocator: nil, outputCallback: { context, _, status, flags, sample in
-                guard let context else { return }
-                let encoder = Unmanaged<H264Encoder>.fromOpaque(context).takeUnretainedValue()
-                guard status == noErr, !flags.contains(.frameDropped), let sample else {
-                    encoder.onOutput?(nil, nil, "Video encoding failed (\(status))"); return
-                }
-                encoder.output(sample)
-            }, refcon: Unmanaged.passUnretained(self).toOpaque(), compressionSessionOut: &result)
+        let callback: VTCompressionOutputCallback = { context, _, status, flags, sample in
+            guard let context else { return }
+            let encoder = Unmanaged<H264Encoder>.fromOpaque(context).takeUnretainedValue()
+            guard status == noErr, !flags.contains(.frameDropped), let sample else {
+                encoder.onOutput?(nil, nil, "Video encoding failed (\(status))"); return
+            }
+            encoder.output(sample)
+        }
+        func create(_ fast: Bool) -> OSStatus {
+            var specification: [CFString: Any] = [kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder: true]
+            if fast {
+                specification[kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder] = true
+                specification[kVTVideoEncoderSpecification_EnableLowLatencyRateControl] = true
+            }
+            return VTCompressionSessionCreate(allocator: kCFAllocatorDefault,
+                width: Int32(width), height: Int32(height), codecType: kCMVideoCodecType_H264,
+                encoderSpecification: specification as CFDictionary, imageBufferAttributes: nil,
+                compressedDataAllocator: nil, outputCallback: callback,
+                refcon: Unmanaged.passUnretained(self).toOpaque(), compressionSessionOut: &result)
+        }
+        var status = create(lowLatency)
+        var selectedFast = lowLatency && status == noErr
+        if status != noErr && lowLatency { result = nil; status = create(false); selectedFast = false }
+        lowLatencyEnabled = selectedFast
         try checkStatus(status, "Create H.264 encoder")
         guard let result else { throw PairError.message("No H.264 encoder is available") }
         session = result
@@ -37,7 +50,7 @@ final class H264Encoder {
             let properties: [CFString: Any] = [
                 kVTCompressionPropertyKey_RealTime: true,
                 kVTCompressionPropertyKey_AllowFrameReordering: false,
-                kVTCompressionPropertyKey_ProfileLevel: kVTProfileLevel_H264_Main_AutoLevel,
+                kVTCompressionPropertyKey_ProfileLevel: lowLatencyEnabled ? kVTProfileLevel_H264_High_AutoLevel : kVTProfileLevel_H264_Main_AutoLevel,
                 kVTCompressionPropertyKey_ExpectedFrameRate: fps,
                 kVTCompressionPropertyKey_MaxKeyFrameInterval: fps * 2,
                 kVTCompressionPropertyKey_AverageBitRate: bitrate
@@ -45,8 +58,25 @@ final class H264Encoder {
             for (key, value) in properties {
                 try checkStatus(VTSessionSetProperty(result, key: key, value: value as CFTypeRef), "Set H.264 property \(key)")
             }
+            if lowLatencyEnabled { _ = VTSessionSetProperty(result, key: kVTCompressionPropertyKey_MaxFrameDelayCount, value: 0 as NSNumber) }
             try checkStatus(VTCompressionSessionPrepareToEncodeFrames(result), "Prepare encoder")
         } catch { stop(); throw error }
+    }
+    func copiedProperty(_ key: CFString) -> (OSStatus, AnyObject?) {
+        guard let session else { return (-1, nil) }
+        var value: Unmanaged<CFTypeRef>?
+        let status = VTSessionCopyProperty(session, key: key, allocator: kCFAllocatorDefault, valueOut: &value)
+        return (status, value?.takeRetainedValue())
+    }
+    var reportedHardwareAcceleration: Bool? {
+        let (status, value) = copiedProperty(kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder)
+        guard status == noErr else { return nil }
+        return (value as? NSNumber)?.boolValue
+    }
+    var encoderDetails: String {
+        let (status, value) = copiedProperty(kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder)
+        let identifier = copiedProperty(kVTCompressionPropertyKey_EncoderID).1 as? String ?? "unreported"
+        return "encoder=\(identifier), hardware-query=\(status), value=\(value.map { String(describing: $0) } ?? "nil")"
     }
     func encode(_ pixelBuffer: CVPixelBuffer, forceKeyframe: Bool = false) throws {
         guard let session else { throw PairError.message("The encoder has stopped") }
@@ -168,15 +198,25 @@ final class H264Samples {
     }
 }
 
-final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
+// Encoder/window state belongs to queue; raw admission/stopping uses lock.
+// Callbacks are configured before capture starts and remain immutable until stop.
+final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
+    private struct Capture { let image: CVPixelBuffer; let at: UInt64 }
+    private struct Encoding { let id: UInt64; let started: UInt64 }
     private let link: PeerLink
     private let encoder: H264Encoder
-    private let queue = DispatchQueue(label: "MacPair.capture", qos: .userInteractive)
-    private var stream: SCStream?
+    private let queue = DispatchQueue(label: "MacPair.encode", qos: .userInteractive)
+    private let captureQueue = DispatchQueue(label: "MacPair.capture", qos: .userInteractive)
     private let lock = NSLock()
-    private var busy = false
+    private var latest: Capture?
+    private var pumpScheduled = false
     private var stopped = false
-    private var needsKeyframe = true
+    private var encoding: Encoding?
+    private var window: VideoFrameWindow
+    private let feedback: Bool
+    private let metrics = VideoMetrics()
+    private var watchdog: DispatchSourceTimer?
+    private var stream: SCStream?
     private var reportedDimensions = false
     private let expectedWidth: Int
     private let expectedHeight: Int
@@ -184,23 +224,22 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
     var onError: ((LocalizedMessage) -> Void)?
     var onSent: (() -> Void)?
 
-    init(link: PeerLink, width: Int, height: Int, fps: Int) throws {
-        self.link = link
-        self.expectedWidth = width
-        self.expectedHeight = height
-        self.encoder = try H264Encoder(width: width, height: height, fps: fps)
+    init(link: PeerLink, width: Int, height: Int, fps: Int, feedback: Bool = false) throws {
+        self.link = link; self.feedback = feedback
+        self.window = VideoFrameWindow(limit: feedback ? 2 : 1)
+        expectedWidth = width; expectedHeight = height
+        encoder = try H264Encoder(width: width, height: height, fps: fps)
         super.init()
         encoder.onOutput = { [weak self] format, video, error in
             guard let self else { return }
-            if let error { self.releaseFrame(); self.onError?(error); return }
-            guard let video else { self.releaseFrame(); return }
-            if let format { self.link.send(.format, format) }
-            self.link.send(.video, video) { [weak self] ok in
-                self?.releaseFrame()
-                if ok { self?.onSent?() }
-            }
+            self.queue.async { self.encoded(format: format, video: video, error: error) }
         }
     }
+    var encoderInfo: String {
+        "H.264 \(encoder.encoderDetails)\n\(L("Hardware required"))=\(encoder.lowLatencyEnabled) · \(L("Low latency"))=\(encoder.lowLatencyEnabled) · NV12/420v · \(L("Frame feedback"))=\(feedback)"
+    }
+    func snapshot(reset: Bool = true) -> VideoMetricsSnapshot { metrics.snapshot(reset: reset) }
+
     func start(displayID: CGDirectDisplayID, width: Int, height: Int, fps: Int) async throws {
         var target: SCDisplay?
         for _ in 0..<30 {
@@ -212,56 +251,145 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
         try Task.checkCancellation()
         guard let target else { throw PairError.message("Screen capture could not find the selected display") }
         onCaptureInfo?("Capture source: \(target.width) × \(target.height); encoder: \(width) × \(height) px; bitrate \(encoder.bitrate / 1_000_000) Mbps")
+        onCaptureInfo?(LocalizedMessage(verbatim: encoderInfo))
         let configuration = SCStreamConfiguration()
-        configuration.width = width
-        configuration.height = height
+        configuration.width = width; configuration.height = height
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: Int32(fps))
         configuration.queueDepth = 3
-        configuration.pixelFormat = kCVPixelFormatType_32BGRA
-        configuration.showsCursor = true
-        configuration.capturesAudio = false
+        configuration.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+        configuration.colorMatrix = kCVImageBufferYCbCrMatrix_ITU_R_709_2
+        configuration.showsCursor = true; configuration.capturesAudio = false
         let filter = SCContentFilter(display: target, excludingApplications: [], exceptingWindows: [])
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
-        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
+        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: captureQueue)
         self.stream = stream
+        queue.async { self.startWatchdog() }
         try await stream.startCapture()
     }
+
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of outputType: SCStreamOutputType) {
         guard outputType == .screen, sampleBuffer.isValid,
               let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
               let rawStatus = attachments.first?[.status] as? Int,
               SCFrameStatus(rawValue: rawStatus) == .complete,
               let image = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        lock.lock()
-        guard !busy, !stopped else { lock.unlock(); return }
-        busy = true
-        let force = needsKeyframe
-        needsKeyframe = false
-        lock.unlock()
-        let width = CVPixelBufferGetWidth(image), height = CVPixelBufferGetHeight(image)
-        guard width == expectedWidth, height == expectedHeight else {
-            releaseFrame()
-            onError?("Screen capture returned unexpected pixel dimensions")
-            return
+        submit(image)
+    }
+
+    /// The production capture callback and generated-frame tests share admission.
+    /// Only this one latest raw buffer may wait; encoded frames stay ordered.
+    func submit(_ image: CVPixelBuffer) {
+        guard CVPixelBufferGetWidth(image) == expectedWidth, CVPixelBufferGetHeight(image) == expectedHeight else {
+            onError?("Screen capture returned unexpected pixel dimensions"); return
         }
+        let at = VideoClock.now
+        metrics.event("capture")
+        lock.lock()
+        guard !stopped else { lock.unlock(); return }
+        let replaced = latest != nil
+        latest = Capture(image: image, at: at)
+        lock.unlock()
+        if replaced { metrics.event("replace") }
+        schedulePump()
+    }
+
+    private func schedulePump() {
+        lock.lock()
+        let schedule = !stopped && !pumpScheduled && latest != nil
+        if schedule { pumpScheduled = true }
+        lock.unlock()
+        if schedule { queue.async { [weak self] in self?.pump() } }
+    }
+    private func pump() {
+        lock.lock(); pumpScheduled = false
+        guard !stopped, encoding == nil, window.available, let capture = latest else { lock.unlock(); return }
+        latest = nil
+        lock.unlock()
+        guard let id = window.reserve(capturedAt: capture.at) else { return }
+        let now = VideoClock.now
+        metrics.depth(window.count); metrics.timing("raw", ns: now - capture.at)
+        encoding = Encoding(id: id, started: now)
         if !reportedDimensions {
             reportedDimensions = true
-            onCaptureInfo?("Actual captured frame: \(width) × \(height) px")
+            onCaptureInfo?("Actual captured frame: \(expectedWidth) × \(expectedHeight) px")
         }
-        // Only one capture/encode/send is in flight. Skipped captures were never
-        // encoded, so H.264 prediction never references a frame we discarded.
-        do { try encoder.encode(image, forceKeyframe: force) }
-        catch { releaseFrame(); onError?(error.appMessage) }
+        do { try encoder.encode(capture.image, forceKeyframe: id == 1) }
+        catch { onError?(error.appMessage) }
     }
-    private func releaseFrame() { lock.lock(); busy = false; lock.unlock() }
+    private func encoded(format: Data?, video: Data?, error: LocalizedMessage?) {
+        guard !lock.withLock({ stopped }) else { return }
+        guard let current = encoding else { onError?("Unexpected encoded frame"); return }
+        encoding = nil
+        if let error { onError?(error); return }
+        guard let video else { onError?("Encoded output is not readable"); return }
+        guard video.count + (feedback ? 8 : 0) + PacketCipher.overhead + 1 <= Wire.maximumPacket else {
+            onError?("Encoded video frame exceeds the packet limit. Choose Larger Text and reconnect."); return
+        }
+        let now = VideoClock.now
+        do { try window.encoded(current.id, at: now) }
+        catch { onError?(error.appMessage); return }
+        metrics.event("encode"); metrics.timing("encode", ns: now - current.started)
+        if let format { link.send(.format, format) }
+        let payload = feedback ? VideoFrame(id: current.id, bytes: video).data : video
+        link.send(feedback ? .videoFrame : .video, payload) { [weak self] ok in
+            guard let self else { return }
+            self.queue.async {
+                guard !self.lock.withLock({ self.stopped }) else { return }
+                if ok {
+                    self.metrics.event("send"); self.metrics.timing("send", ns: VideoClock.now - now)
+                    self.onSent?()
+                    if !self.feedback {
+                        do { _ = try self.window.retire(current.id, ordered: false) }
+                        catch { self.onError?(error.appMessage) }
+                        self.metrics.depth(self.window.count)
+                        self.schedulePump()
+                    }
+                } else { self.onError?("Video send failed") }
+            }
+        }
+        schedulePump()
+    }
+    func acknowledge(_ data: Data) {
+        queue.async { [weak self] in
+            guard let self, self.feedback, !self.lock.withLock({ self.stopped }) else { return }
+            do {
+                let acknowledgement = try VideoAcknowledgement(data)
+                let entry = try self.window.retire(acknowledgement.id, ordered: true)
+                self.metrics.event("ack")
+                self.metrics.timing("ack", ns: VideoClock.now - entry.capturedAt)
+                self.metrics.timing("dispatch", ns: UInt64(acknowledgement.dispatchUS) * 1_000)
+                self.metrics.timing("sample", ns: UInt64(acknowledgement.sampleUS) * 1_000)
+                self.metrics.timing("renderer", ns: UInt64(acknowledgement.rendererWaitUS) * 1_000)
+                self.metrics.depth(self.window.count)
+                self.schedulePump()
+            } catch { self.onError?(error.appMessage) }
+        }
+    }
+    private func startWatchdog() {
+        guard feedback, !lock.withLock({ stopped }) else { return }
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 1, repeating: 0.5)
+        timer.setEventHandler { [weak self] in
+            guard let self, let oldest = self.window.oldest else { return }
+            if VideoClock.now - oldest > 3_000_000_000 {
+                self.onError?("The video receiver stopped accepting frames. Reconnect to resume.")
+            }
+        }
+        watchdog = timer; timer.resume()
+    }
     func stream(_ stream: SCStream, didStopWithError error: Error) {
-        lock.lock(); let report = !stopped; lock.unlock()
-        if report { onError?(error.appMessage) }
+        if !lock.withLock({ stopped }) { onError?(error.appMessage) }
     }
     func stop() async {
-        lock.withLock { stopped = true }
+        lock.withLock { stopped = true; latest = nil }
         if let stream { try? await stream.stopCapture() }
         stream = nil
-        queue.sync { encoder.stop() }
+        await withCheckedContinuation { continuation in
+            queue.async {
+                self.watchdog?.cancel(); self.watchdog = nil
+                self.encoder.stop()
+                continuation.resume()
+            }
+        }
     }
 }

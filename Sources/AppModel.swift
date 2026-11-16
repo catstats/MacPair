@@ -11,6 +11,7 @@ struct SessionSummary {
     let frames: Int
     let path: LocalizedMessage
     let diagnostic: Bool
+    var performance: String? = nil
 }
 
 @MainActor
@@ -57,6 +58,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     @Published var cleaning = false
     @Published var permission = CGPreflightScreenCaptureAccess()
     @Published var events: [LocalizedMessage] = []
+    @Published var videoPerformance = ""
     @Published var diagnostic = false
 
     private var browser: NWBrowser?
@@ -76,10 +78,13 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     private var mirrorDisplayID: CGDirectDisplayID?
     private var screen: VirtualScreen?
     private var streamer: ScreenStreamer?
+    private var videoReceiver: VideoReceiver?
     private var setupTask: Task<Void, Never>?
     private var sessionID = UUID()
     private var statsTimer: Timer?
     private var framesThisSecond = 0
+    private var sessionFrameCount = 0
+    private var statsUpdatedAt = VideoClock.now
     private let samples = H264Samples()
     private let displayLayer = AVSampleBufferDisplayLayer()
     private var viewerWindow: NSWindow?
@@ -446,7 +451,8 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
             }
             requestedHello = SessionHello(version: Wire.version,
                 mode: testOnly ? "diagnostic" : displayMode.rawValue, width: width, height: height, fps: 30,
-                resolution: !testOnly && displayMode == .extend ? resolution : .recommended)
+                resolution: !testOnly && displayMode == .extend ? resolution : .recommended,
+                pipeline: testOnly ? nil : VideoPipelineOptions())
             try requestedHello?.validateRequest()
         } catch { status = error.appMessage; return }
         dismissSuggestion()
@@ -593,13 +599,9 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
                 throw PairError.message("Video display failed: \(displayLayer.error?.localizedDescription ?? "unknown error")")
             }
             displayLayer.enqueue(sample)
-            countFrame()
-            if totalFrames == 1 {
-                status = activeHello?.mode == "mirror"
-                    ? "Receiving the mirrored screen. Press Esc to exit full screen."
-                    : "Receiving the extended desktop. Press Esc to exit full screen."
-                log("First H.264 frame received")
-            }
+            receivedVideoFrame()
+        case .videoFrame, .videoAck:
+            throw PairError.message("Video feedback was not negotiated")
         case .failure:
             throw PairError.message("Peer reported: \(String(decoding: packet.body.prefix(512), as: UTF8.self))")
         case .ping, .pong: break // Handled by the transport.
@@ -617,8 +619,32 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
                 let hello = try request.negotiated(for: info)
                 self.activeHello = hello
                 self.logDimensions(hello)
-                link.send(.ready, try JSONEncoder().encode(hello))
+                if hello.pipeline != nil {
+                    let receiver = VideoReceiver(layer: self.displayLayer, width: hello.width, height: hello.height)
+                    receiver.onAcknowledgement = { [weak link] data in link?.send(.videoAck, data) }
+                    receiver.onError = { [weak self, weak link] message in
+                        DispatchQueue.main.async {
+                            guard let self, self.sessionID == token else { return }
+                            link?.send(.failure, Data(message.localized.utf8))
+                            self.endSession(reason: message)
+                        }
+                    }
+                    receiver.onDimensions = { [weak self] width, height in
+                        guard let self, self.sessionID == token else { return }
+                        self.receivedWidth = width; self.receivedHeight = height; self.updateViewerHUD()
+                    }
+                    receiver.onSubmitted = { [weak self] in
+                        guard let self, self.sessionID == token else { return }
+                        self.receivedVideoFrame()
+                    }
+                    self.videoReceiver = receiver
+                    link.setMediaHandler { [weak receiver] packet in
+                        guard let receiver, packet.kind == .format || packet.kind == .videoFrame else { return false }
+                        receiver.accept(packet); return true
+                    }
+                }
                 self.sessionReady()
+                link.send(.ready, try JSONEncoder().encode(hello))
                 self.updateViewerHUD()
                 self.status = hello.mode == "mirror" ? "Connected. Waiting for the mirrored screen…" : "Connected. Waiting for the extended desktop…"
             } catch {
@@ -680,11 +706,36 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         connected = true
         totalFrames = 0
         framesThisSecond = 0
+        sessionFrameCount = 0
+        statsUpdatedAt = VideoClock.now
+        if let hello = activeHello, hello.isVideo {
+            log(hello.pipeline == nil
+                ? "Legacy video path: 30 fps target. Update both Macs for frame feedback."
+                : "Video feedback enabled: at most two frames in flight; 60 fps target.")
+        }
+        videoPerformance = ""
         statsTimer?.invalidate()
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self, self.connected else { return }
-                self.fps = self.framesThisSecond
+                let now = VideoClock.now
+                let elapsed = max(0.001, Double(now - self.statsUpdatedAt) / 1e9)
+                self.statsUpdatedAt = now
+                if let streamer = self.streamer {
+                    let snapshot = streamer.snapshot()
+                    self.fps = Int(snapshot.rate("send").rounded())
+                    self.totalFrames = snapshot.totals["send", default: 0]
+                    self.videoPerformance = streamer.encoderInfo + "\n" + snapshot.summary
+                } else {
+                    self.fps = Int((Double(self.framesThisSecond) / elapsed).rounded())
+                    self.totalFrames = self.sessionFrameCount
+                    if let receiver = self.videoReceiver {
+                        let snapshot = receiver.snapshot()
+                        self.fps = Int(snapshot.rate("submit").rounded())
+                        self.videoPerformance = "\(L("System renderer submissions")): \(String(format: "%.1f", snapshot.rate("submit")))/s (\(L("not presentation rate")))\n"
+                            + "\(L("Receiver queue / sample / renderer wait")): \(snapshot.milliseconds("dispatch"))/\(snapshot.milliseconds("sample"))/\(snapshot.milliseconds("renderer")) ms"
+                    }
+                }
                 self.framesThisSecond = 0
                 self.updateViewerHUD()
             }
@@ -718,7 +769,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
                 }
                 try Task.checkCancellation()
                 guard self.sessionID == token else { return }
-                let streamer = try ScreenStreamer(link: link, width: hello.width, height: hello.height, fps: hello.fps)
+                let streamer = try ScreenStreamer(link: link, width: hello.width, height: hello.height, fps: hello.fps, feedback: hello.pipeline != nil)
                 self.streamer = streamer
                 streamer.onError = { [weak self] text in
                     DispatchQueue.main.async {
@@ -732,10 +783,10 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
                         self.log(message)
                     }
                 }
-                streamer.onSent = { [weak self] in
-                    DispatchQueue.main.async {
-                        guard let self, self.sessionID == token else { return }
-                        self.countFrame()
+                if hello.pipeline != nil {
+                    link.setMediaHandler { [weak streamer] packet in
+                        guard let streamer, packet.kind == .videoAck else { return false }
+                        streamer.acknowledge(packet.body); return true
                     }
                 }
                 try await streamer.start(displayID: captureID, width: hello.width, height: hello.height, fps: hello.fps)
@@ -752,11 +803,28 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
             }
         }
     }
-    private func countFrame() { totalFrames += 1; framesThisSecond += 1 }
+    private func countFrame() { sessionFrameCount += 1; framesThisSecond += 1 }
+    private func receivedVideoFrame() {
+        countFrame()
+        if sessionFrameCount == 1 {
+            status = activeHello?.mode == "mirror"
+                ? "Receiving the mirrored screen. Press Esc to exit full screen."
+                : "Receiving the extended desktop. Press Esc to exit full screen."
+            log("First H.264 frame received")
+        }
+    }
     func endSession(reason: LocalizedMessage = "Disconnected") {
         dismissSuggestion()
         if connected {
-            lastSession = SessionSummary(rtt: rtt, frames: totalFrames, path: path, diagnostic: diagnostic)
+            if let streamer {
+                let snapshot = streamer.snapshot()
+                totalFrames = snapshot.totals["send", default: 0]
+                if videoPerformance.isEmpty { videoPerformance = streamer.encoderInfo + "\n" + snapshot.summary }
+            } else if !diagnostic, sessionFrameCount > 0 {
+                totalFrames = sessionFrameCount
+            }
+            lastSession = SessionSummary(rtt: rtt, frames: totalFrames, path: path, diagnostic: diagnostic,
+                performance: videoPerformance.isEmpty ? nil : videoPerformance)
         }
         hasEndedSession = hasEndedSession || connected || connecting
         if pendingTrustIsNew, !trustConfirmed, localTrustSaved, let pendingTrust {
@@ -787,6 +855,8 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         mirrorDisplayID = nil
         sessionAuthenticated = false
         receivedWidth = 0; receivedHeight = 0
+        videoReceiver?.stop(); videoReceiver = nil
+        videoPerformance = ""; sessionFrameCount = 0; framesThisSecond = 0
         displayLayer.flushAndRemoveImage()
         samples.reset()
         viewerWindow?.delegate = nil
@@ -873,11 +943,12 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         updateViewerHUD()
     }
     func copyDiagnostics() {
-        var details = ["MacPair 0.1.8", ProcessInfo.processInfo.operatingSystemVersionString,
+        var details = ["MacPair 0.1.9", ProcessInfo.processInfo.operatingSystemVersionString,
             L10n.text(role.rawValue), connectionTitle.localized, status.localized, path.localized]
-        if connected { details.append("Live: RTT \(rtt), frames \(totalFrames), fps \(fps)") }
+        if connected { details.append("Live: RTT \(rtt), frames \(totalFrames), fps \(fps)"); details.append(videoPerformance) }
         if let previous = lastSession {
             details.append("Last session: RTT \(previous.rtt), frames \(previous.frames), \(previous.path.localized)")
+            if let performance = previous.performance { details.append(performance) }
         }
         let text = (details + events.map(\.localized)).joined(separator: "\n")
         NSPasteboard.general.clearContents()

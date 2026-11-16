@@ -10,6 +10,7 @@ enum Preview {
         let mirrorMode = CommandLine.arguments.contains("--mirror")
         let disconnected = CommandLine.arguments.contains("--disconnected")
         let diagnostics = CommandLine.arguments.contains("--diagnostics")
+        let metrics = CommandLine.arguments.contains("--metrics")
         let nearby = CommandLine.arguments.contains("--nearby")
         let viewer = CommandLine.arguments.contains("--viewer")
         let app = NSApplication.shared
@@ -65,13 +66,27 @@ enum Preview {
                     window.close()
                     continue
                 }
-                for receiver in ((searching || mirrorMode || disconnected || diagnostics) ? [false] : [false, true]) {
+                for receiver in ((searching || mirrorMode || disconnected || diagnostics || metrics) ? [false] : [false, true]) {
                     let model = AppModel(trustStore: TrustStore(memoryOnly: true), identity: PeerIdentity(id: "00000000-0000-0000-0000-000000000001", name: "Preview Mac"))
                     model.language = language
                     if mirrorMode { model.displayMode = .mirror }
                     if !receiver && !disconnected {
                         model.browsing = true
                         model.status = "Looking for nearby displays… Keep Wi-Fi on on both Macs."
+                    }
+                    if metrics {
+                        model.connected = true
+                        model.rememberedSession = true
+                        model.path = "Network path: \("awdl0")"
+                        model.totalFrames = 455
+                        model.fps = 59
+                        model.rtt = "8.0 ms"
+                        model.status = "Extended desktop is ready. Drag a window past the host desktop's right edge."
+                        let example = VideoMetricsSnapshot(counts: ["capture":60,"encode":59,"send":59,"ack":58,"replace":1],
+                            totals: ["send":455], times: ["raw":[1.0],"encode":[9.0,10.0,10.0,10.0,10.0,10.0,11.0,11.0,12.0,12.0,12.0,13.0],"send":[0.4],
+                                "ack":[25.0],"dispatch":[0.2],"sample":[0.1],"renderer":[1.0]],
+                            outstanding: 2, peakOutstanding: 2, intervalSeconds: 1)
+                        model.videoPerformance = L("Generated performance fixture") + "\n" + example.summary
                     }
                     if disconnected {
                         model.connected = true
@@ -89,7 +104,7 @@ enum Preview {
                         model.pairingCode = "024681"
                         model.status = "Select this Mac on the host. Paired Macs need no code."
                     }
-                    let hosting = NSHostingView(rootView: MainView(model: model, diagnosticsExpanded: diagnostics)
+                    let hosting = NSHostingView(rootView: MainView(model: model, diagnosticsExpanded: diagnostics || metrics)
                         .environment(\.colorScheme, searching ? .dark : .light)
                         .background(Color(nsColor: .windowBackgroundColor)))
                     hosting.frame = NSRect(x: 0, y: 0, width: 720, height: 550)
@@ -102,7 +117,7 @@ enum Preview {
                     window.appearance = NSAppearance(named: appearance)
                     window.makeKeyAndOrderFront(nil)
                     RunLoop.main.run(until: Date().addingTimeInterval(0.3))
-                    let prefix = disconnected ? "disconnected-" + language.rawValue : diagnostics ? "diagnostics-" + language.rawValue : (searching ? "search-" : (mirrorMode ? "host-mirror-" : (receiver ? "display-" : "host-"))) + language.rawValue
+                    let prefix = metrics ? "metrics-" + language.rawValue : disconnected ? "disconnected-" + language.rawValue : diagnostics ? "diagnostics-" + language.rawValue : (searching ? "search-" : (mirrorMode ? "host-mirror-" : (receiver ? "display-" : "host-"))) + language.rawValue
                     for frame in (searching ? [1, 2] : [1]) {
                         if frame == 2 { RunLoop.main.run(until: Date().addingTimeInterval(0.9)) }
                         hosting.layoutSubtreeIfNeeded()

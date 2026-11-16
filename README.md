@@ -2,7 +2,7 @@
 
 Extend your desktop onto a nearby Mac, or mirror your main screen. The user has confirmed that the two-Mac display works when the Macs are connected to different Wi-Fi networks.
 
-**Prototype 0.1.8. English is the default; switch to 简体中文 from Settings → Language.** [中文说明](README.zh-CN.md)
+**Prototype 0.1.9. English is the default; switch to 简体中文 from Settings → Language.** [中文说明](README.zh-CN.md)
 
 The local protocol, secure-pairing, H.264, and virtual-display checks have passed on the development Mac. **User report on 2026-11-16: virtual display and operation across different Wi-Fi networks passed. The user-described “no Wi-Fi” scenario did not work; whether the Wi-Fi radio was off or merely disconnected was not specified.** Standalone operation without an access point remains unconfirmed. See [test instructions and verification record](TESTING.md).
 
@@ -10,7 +10,7 @@ The local protocol, secure-pairing, H.264, and virtual-display checks have passe
 
 Double-click `Start MacPair.command`. In an iCloud checkout the runnable App is kept in this Mac's local cache; the launcher finds it automatically. Outside iCloud, the default App path is `build/MacPair.app`.
 
-To use a second Mac, copy `build/MacPair-0.1.8.zip` to it, unzip it, and open MacPair.app. The package includes the full source. The second Mac does not need Xcode.
+To use a second Mac, copy `build/MacPair-0.1.9.zip` to it, unzip it, and open MacPair.app. The package includes the full source. The second Mac does not need Xcode.
 
 Requirements: macOS 13 or later on both Macs, with compatible Apple peer-to-peer Wi-Fi hardware. The app is a universal arm64/x86_64 build. Both architectures have been compiled; the processor and OS versions of the user-tested pair were not separately recorded.
 
@@ -42,7 +42,7 @@ If the host still needs Screen Recording permission, Connect brings the main win
 
 ## Pair once; reconnect without typing
 
-Use **0.1.8** on both Macs for automatic discovery and role restoration. Protocol v3 and saved pairings from 0.1.6–0.1.7 remain compatible; builds before 0.1.6 are not compatible.
+Use **0.1.9** on both Macs for video feedback and the 60 fps target. Protocol v3, automatic roles and saved pairings from 0.1.6–0.1.8 remain compatible; older compatible peers negotiate the original 30 fps path.
 
 - A new Mac uses a uniformly random **six-digit numeric code**, including possible leading zeroes. It expires after **5 minutes** and is invalidated on successful authentication. Spaces or a hyphen are accepted when pasting.
 - After both Macs confirm the saved pairing, the app stores a **strong per-device credential in the local macOS login Keychain**. It never saves the six-digit code. The app does not synchronize these credentials through iCloud.
@@ -56,7 +56,7 @@ The short code is used with the existing **BoringSSL SPAKE2 password-authenticat
 
 ## Choose Mirror or Extend
 
-Use **0.1.8 on both Macs**. On the host, choose the mode before starting:
+Use **0.1.9 on both Macs**. On the host, choose the mode before starting:
 
 | Mode | What the display Mac shows | Start button |
 | --- | --- | --- |
@@ -69,7 +69,7 @@ Mirror uses ScreenCaptureKit to capture the existing main display. It does not c
 
 ## Display resolution (Extend)
 
-Use **0.1.8** on both Macs; the sizing handshake uses protocol v3. Choose the resolution on the host before connecting:
+Use **0.1.9** on both Macs; the sizing handshake uses protocol v3. Choose the resolution on the host before connecting:
 
 | Setting | Desktop space | Text size on the receiver |
 | --- | --- | --- |
@@ -106,7 +106,21 @@ The host only connects to an `awdl*` interface discovered through Bonjour, and e
 
 The diagnostic panel shows Network.framework's interface report. Combine that with interface restriction and the disconnected-network test to verify the direct path.
 
-Round-trip time is a network heartbeat measurement, not end-to-end display latency. The app targets up to 30 fps; actual speed and range must be measured on two Macs. A static desktop may show 0 new fps because ScreenCaptureKit emits no changed frames.
+Round-trip time is a network heartbeat measurement, not end-to-end display latency. The new video path targets up to 60 fps (30 fps with older peers); actual speed and range must be measured on two Macs. A static desktop may show 0 new fps because ScreenCaptureKit emits no changed frames.
+
+## Video responsiveness (0.1.9)
+
+The actual pipeline is ScreenCaptureKit → VideoToolbox H.264 → authenticated encrypted TCP over AWDL → AVSampleBufferDisplayLayer. The system layer handles decoding and presentation; this app does not implement its own Metal renderer or HEVC codec.
+
+- Capture uses NV12/420v with a Rec.709 matrix, retaining the negotiated pixel dimensions and Retina scale. No automatic resolution reduction is introduced.
+- The encoder requests [Apple's low-latency rate-control mode](https://developer.apple.com/documentation/videotoolbox/kvtvideoencoderspecification_enablelowlatencyratecontrol) with hardware required. If that selection is unavailable, it uses the ordinary real-time encoder. Diagnostics record the selected encoder ID and the hardware-property query result. The observed RTVC service returns “property unsupported” for that query; this is reported as unreported, not as a software encoder.
+- With both peers updated, one encode can overlap the previous frame's transmission. At most **two frames** can be encoding/transmitting/waiting for receiver submission, with **one replaceable raw capture** waiting. Encoded H.264 prediction frames are never dropped.
+- An encrypted acknowledgement returns only after the receiver submits a frame to its system display layer. Receiver readiness applies backpressure. This prevents a long TCP/UI backlog, but the ACK does **not** certify physical display presentation.
+- Compressed sample construction runs on a dedicated queue. Published UI counters update once per second instead of on every frame.
+
+In **Diagnostics**, compare capture/encode/send/ACK update rates, encoder mean/p95, raw wait, local send completion, and receiver queue/sample/render-submission wait. “Callback → receiver submit → ACK” uses one sender clock and includes the return path. It is not one-way network latency or motion-to-photon latency. Reported FPS counts video updates/submissions, not panel refreshes; a still desktop can produce few new frames.
+
+For a meaningful physical test, install 0.1.9 on both Macs, keep the same resolution preset, and drag a window / scroll continuously for 10–15 seconds. Copy Diagnostics on **both** Macs if it still feels delayed. Look for which rate falls and which stage's p95 grows. Actual wireless smoothness still needs measurement on the two Macs.
 
 ## Build and check
 
@@ -118,11 +132,14 @@ No network-fetched packages, cloud services, or paid developer account are neede
 ./scripts/test.sh              # real local secure-pairing and H.264 checks
 ./scripts/test.sh --pairing    # remembered reconnect, Forget, expiry/lockout and scoped Keychain checks
 ./scripts/test.sh --discovery  # also checks automatic roles and the nonactivating native card
+./scripts/test.sh --video      # encrypted generated Retina video + delayed-ACK backpressure
 ./scripts/test.sh --display    # real 1×/2× displays + temporary fullscreen sizing check
 ./scripts/preview.sh           # render English/Chinese UI layout fixtures
 ./scripts/preview.sh --nearby  # first-pairing and remembered-Mac card fixtures
 ./scripts/package.sh           # app + guides + complete source
 ```
+
+Run the built App binary with **--performance-test** for generated-frame codec timings, or **--performance-test --legacy-encoder** for the ordinary-encoder control. These JSON results exclude screen capture, AWDL and physical presentation.
 
 Tests use generated image data and loopback networking. The optional Mirror check uses the App path printed by build.sh with `/Contents/MacOS/MacPair --mirror-smoke-test` appended. It reads one main-screen frame only if this app already has Screen Recording permission; otherwise it skips without requesting permission. It saves and sends no image. They do not automatically grant permissions or capture your existing desktop.
 
@@ -143,7 +160,7 @@ Extend-mode virtual-screen creation uses the **non-public CGVirtualDisplay API**
 
 Extend negotiates the receiver's logical screen size, backing pixels, scale and actual full-screen viewport before creating its virtual display. A Retina receiver gets a 2× HiDPI desktop and matching H.264 pixel dimensions. Default avoids an extra video resize when its measured viewport has even backing dimensions. Notched displays use the content area measured after full-screen entry. At 1×, odd dimensions round to the nearest even pixel for H.264. The viewer always preserves aspect ratio.
 
-Mirror retains its aspect-preserving 1280 × 800 capture limit and creates no virtual display. Both modes target up to 30 fps. Extend's encoder bitrate scales with resolution (8–45 Mbps); this is a resolution-based budget, not a congestion controller. Audio, display-side input, multiple receivers and automatic reconnection are outside this prototype.
+Mirror retains its aspect-preserving 1280 × 800 capture limit and creates no virtual display. Both modes target up to 60 fps when both peers support video feedback; older peers retain 30 fps. Extend's encoder bitrate scales with resolution (8–45 Mbps); this is a resolution-based budget, not a congestion controller. Audio, display-side input, multiple receivers and automatic reconnection are outside this prototype.
 
 ## Troubleshooting
 
