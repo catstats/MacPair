@@ -29,7 +29,7 @@ struct MainView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(alignment: .firstTextBaseline, spacing: 9) {
                             Text("MacPair").font(.title2.bold())
-                            Text(L("Prototype 0.1.9")).font(.caption).foregroundStyle(.secondary)
+                            Text("v0.1.9").font(.caption).foregroundStyle(.secondary)
                         }
                         Text(L("Your nearby Mac. Your second display.")).font(.caption).foregroundStyle(.secondary)
                     }

@@ -42,7 +42,6 @@ enum L10n {
         "Video feedback enabled: at most two frames in flight; 60 fps target.": "已启用帧反馈：最多两帧在途，目标 60 fps。",
         "Encoded video frame exceeds the packet limit. Choose Larger Text and reconnect.": "编码视频帧超出上限，请选择「更大文字」并重新连接。",
         "Video send failed": "视频发送失败",
-        "Prototype 0.1.9": "原型 0.1.9",
         "Unsupported video feedback settings": "视频反馈设置不受支持",
         "Invalid video frame identifier": "视频帧序号无效",
         "Invalid video acknowledgement": "视频确认消息无效",
