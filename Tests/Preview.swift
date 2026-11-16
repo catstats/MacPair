@@ -10,6 +10,7 @@ enum Preview {
         let mirrorMode = CommandLine.arguments.contains("--mirror")
         let disconnected = CommandLine.arguments.contains("--disconnected")
         let diagnostics = CommandLine.arguments.contains("--diagnostics")
+        let nearby = CommandLine.arguments.contains("--nearby")
         let viewer = CommandLine.arguments.contains("--viewer")
         let app = NSApplication.shared
         let appearance: NSAppearance.Name = searching ? .darkAqua : .aqua
@@ -21,6 +22,29 @@ enum Preview {
         do {
             try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
             for language in AppLanguage.allCases {
+                if nearby {
+                    L10n.setLanguage(language)
+                    for remembered in [false, true] {
+                        let root = NearbyDisplayCard(name: "MacBook Air", remembered: remembered,
+                            mode: .constant(.extend), code: .constant(""), connect: {}, dismiss: {})
+                        let hosting = NSHostingView(rootView: root)
+                        hosting.frame = NSRect(x: 0, y: 0, width: 360, height: remembered ? 350 : 400)
+                        let window = NSWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                        window.isReleasedWhenClosed = false
+                        window.contentView = hosting
+                        window.makeKeyAndOrderFront(nil)
+                        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+                        hosting.layoutSubtreeIfNeeded()
+                        guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else { throw PairError.message("Cannot allocate preview bitmap") }
+                        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+                        guard let data = bitmap.representation(using: .png, properties: [:]) else { throw PairError.message("Cannot render preview PNG") }
+                        let name = "nearby-" + (remembered ? "paired-" : "") + language.rawValue + ".png"
+                        try data.write(to: output.appendingPathComponent(name))
+                        print("Rendered " + name + " (component fixture)")
+                        window.close()
+                    }
+                    continue
+                }
                 if viewer {
                     L10n.setLanguage(language)
                     let view = NativeVideoView(videoLayer: AVSampleBufferDisplayLayer())
@@ -45,6 +69,10 @@ enum Preview {
                     let model = AppModel(trustStore: TrustStore(memoryOnly: true), identity: PeerIdentity(id: "00000000-0000-0000-0000-000000000001", name: "Preview Mac"))
                     model.language = language
                     if mirrorMode { model.displayMode = .mirror }
+                    if !receiver && !disconnected {
+                        model.browsing = true
+                        model.status = "Looking for nearby displays… Keep Wi-Fi on on both Macs."
+                    }
                     if disconnected {
                         model.connected = true
                         model.rtt = "7.6 ms"

@@ -26,7 +26,18 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     @Published var displayMode: DisplayMode = .extend
     @Published var resolution: ResolutionPreset = .recommended
     @Published var peers: [DiscoveredPeer] = []
-    @Published var selectedID: String?
+    @Published var selectedID: String? {
+        didSet {
+            if selectedID != oldValue {
+                enteredCode = ""
+                if let suggestedDeviceID, selectedPeer?.deviceIdentity?.id != suggestedDeviceID {
+                    dismissSuggestion()
+                }
+            }
+        }
+    }
+    @Published var automaticDiscovery = true
+    @Published private(set) var suggestedDeviceID: String?
     @Published var enteredCode = ""
     @Published var pairingCode = ""
     @Published var pairingCoolingDown = false
@@ -49,6 +60,15 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     @Published var diagnostic = false
 
     private var browser: NWBrowser?
+    private let preferences: UserDefaults?
+    private let showsDiscoveryWindows: Bool
+    private var automaticBehaviorStarted = false
+    private var roleActivation: Task<Void, Never>?
+    private var cleanupTask: Task<Void, Never>?
+    private var suggestionTask: Task<Void, Never>?
+    private var pendingSuggestionID: String?
+    private var suggestions = DiscoverySuggestions()
+    private var nearbyPanel: NSPanel?
     private var listener: NWListener?
     private var link: PeerLink?
     private var activeHello: SessionHello?
@@ -95,10 +115,17 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         return browsing ? "Looking for displays…" : "Ready"
     }
 
-    init(trustStore: TrustStore = TrustStore(), identity: PeerIdentity? = nil) {
+    init(trustStore: TrustStore = TrustStore(), identity: PeerIdentity? = nil,
+         preferences: UserDefaults? = nil, showsDiscoveryWindows: Bool = false) {
+        self.preferences = preferences
+        self.showsDiscoveryWindows = showsDiscoveryWindows
         self.trustStore = trustStore
         self.localIdentity = identity ?? PeerIdentity.local()
         super.init()
+        if let preferences {
+            role = preferences.string(forKey: "MacPairRole").flatMap(MacRole.init(rawValue:)) ?? .host
+            automaticDiscovery = preferences.object(forKey: "MacPairAutomaticDiscovery") as? Bool ?? true
+        }
         reloadTrustedDevices()
     }
     var receivingPort: NWEndpoint.Port? { listener?.port }
@@ -118,6 +145,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     }
     func forgetDevice(_ device: TrustedDeviceSummary) {
         guard !occupied else { return }
+        dismissSuggestion()
         do {
             try trustStore.forgetPeer(device.peer.id)
             enteredCode = ""
@@ -134,8 +162,47 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         events.append(text)
         if events.count > 12 { events.removeFirst(events.count - 12) }
     }
+    var suggestedPeer: DiscoveredPeer? {
+        peers.first { $0.deviceIdentity?.id == suggestedDeviceID && $0.isDirect }
+    }
+
+    func startAutomaticBehavior() {
+        guard !automaticBehaviorStarted else { return }
+        automaticBehaviorStarted = true
+        activateRole()
+    }
+
+    func activateRole() {
+        preferences?.set(role.rawValue, forKey: "MacPairRole")
+        stopAll()
+        let expectedRole = role
+        let cleanup = cleanupTask
+        roleActivation = Task { @MainActor [weak self] in
+            await cleanup?.value
+            guard let self, !Task.isCancelled, self.role == expectedRole, !self.occupied else { return }
+            if expectedRole == .receiver { self.listen() }
+            else if self.automaticDiscovery { self.browse() }
+            else { self.status = "Automatic discovery is off. Choose Find nearby displays to search." }
+        }
+    }
+
+    func automaticDiscoveryChanged() {
+        preferences?.set(automaticDiscovery, forKey: "MacPairAutomaticDiscovery")
+        guard role == .host else { return }
+        if automaticDiscovery {
+            if !occupied { browse() }
+        } else {
+            dismissSuggestion()
+            browser?.cancel(); browser = nil; browsing = false
+            peers = []; selectedID = nil
+            status = "Automatic discovery is off. Choose Find nearby displays to search."
+        }
+    }
+
     func browse() {
-        guard !occupied else { return }
+        guard !occupied, role == .host else { return }
+        dismissSuggestion()
+        suggestions.reset()
         hasEndedSession = false
         browser?.cancel()
         peers = []
@@ -149,10 +216,14 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
                 case .ready:
                     self.browsing = true
                     self.status = "Looking for nearby displays… Keep Wi-Fi on on both Macs."
+                    self.considerSuggestion()
                 case .failed(let error):
                     self.browsing = false
+                    self.dismissSuggestion(pause: false)
                     self.status = "Discovery failed: \(error.localizedDescription). Check Local Network permission."
                 case .waiting(let error):
+                    self.browsing = false
+                    self.dismissSuggestion(pause: false)
                     self.status = "Waiting for network: \(error.localizedDescription)"
                 default: break
                 }
@@ -161,14 +232,85 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         browser.browseResultsChangedHandler = { [weak self, weak browser] results, _ in
             DispatchQueue.main.async {
                 guard let self, let browser, self.browser === browser else { return }
-                self.peers = results.compactMap(DiscoveredPeer.init).sorted { $0.name < $1.name }
-                if !self.peers.contains(where: { $0.id == self.selectedID }) {
+                self.peers = results.compactMap(DiscoveredPeer.init)
+                    .filter { $0.deviceIdentity?.id != self.localIdentity.id }
+                    .sorted { $0.name < $1.name }
+                if self.suggestedDeviceID != nil && self.suggestedPeer == nil {
+                    self.dismissSuggestion(pause: false)
+                }
+                if !self.occupied, !self.peers.contains(where: { $0.id == self.selectedID }) {
                     self.selectedID = self.peers.first(where: \.isDirect)?.id
                 }
+                self.considerSuggestion()
             }
         }
         self.browser = browser
         browser.start(queue: .main)
+    }
+
+    private func nextSuggestion() -> String? {
+        suggestions.next(in: peers.map {
+            DiscoveryCandidate(deviceID: $0.deviceIdentity?.id, name: $0.name,
+                direct: $0.isDirect, trusted: isTrusted($0))
+        }, localID: localIdentity.id, enabled: automaticDiscovery && browsing,
+            host: role == .host, busy: occupied, editingCode: !enteredCode.isEmpty)
+    }
+
+    private func considerSuggestion() {
+        guard suggestedDeviceID == nil else { return }
+        guard let id = nextSuggestion() else {
+            suggestionTask?.cancel(); suggestionTask = nil; pendingSuggestionID = nil
+            return
+        }
+        guard pendingSuggestionID != id else { return }
+        suggestionTask?.cancel()
+        pendingSuggestionID = id
+        suggestionTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .milliseconds(600), clock: .continuous) }
+            catch { return }
+            guard let self else { return }
+            defer {
+                if self.pendingSuggestionID == id {
+                    self.pendingSuggestionID = nil
+                    self.suggestionTask = nil
+                }
+            }
+            guard !Task.isCancelled, self.suggestedDeviceID == nil, self.nextSuggestion() == id,
+                  let peer = self.peers.first(where: { $0.deviceIdentity?.id == id && $0.isDirect }) else { return }
+            self.pendingSuggestionID = nil
+            self.suggestionTask = nil
+            self.selectedID = peer.id
+            self.suggestedDeviceID = id
+            self.suggestions.didOffer(id)
+            if self.showsDiscoveryWindows { self.showSuggestionPanel(remembered: self.isTrusted(peer)) }
+        }
+    }
+
+    func dismissSuggestion(pause: Bool = true) {
+        if pause { suggestions.pause() }
+        suggestionTask?.cancel(); suggestionTask = nil; pendingSuggestionID = nil
+        suggestedDeviceID = nil
+        let panel = nearbyPanel
+        nearbyPanel = nil
+        panel?.close()
+    }
+
+    private func showSuggestionPanel(remembered: Bool) {
+        let panel = NearbyDisplayPanel.make(remembered: remembered, content: SuggestedDisplayCard(model: self))
+        nearbyPanel = panel
+        // Availability alone never initiates pairing/capture or takes focus.
+        panel.orderFrontRegardless()
+    }
+
+    func connectSuggestedDisplay() {
+        guard !occupied, let peer = suggestedPeer, peer.deviceIdentity != nil else {
+            dismissSuggestion(); return
+        }
+        selectedID = peer.id
+        dismissSuggestion()
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.windows.first { !($0 is NSPanel) && $0.title == "MacPair" }?.makeKeyAndOrderFront(nil)
+        connect(testOnly: false)
     }
     func listen() {
         guard !occupied, !listening else { return }
@@ -307,6 +449,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
                 resolution: !testOnly && displayMode == .extend ? resolution : .recommended)
             try requestedHello?.validateRequest()
         } catch { status = error.appMessage; return }
+        dismissSuggestion()
         hasEndedSession = false
         connecting = true
         status = "Establishing an encrypted connection over \(interface.name)…"
@@ -611,6 +754,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     }
     private func countFrame() { totalFrames += 1; framesThisSecond += 1 }
     func endSession(reason: LocalizedMessage = "Disconnected") {
+        dismissSuggestion()
         if connected {
             lastSession = SessionSummary(rtt: rtt, frames: totalFrames, path: path, diagnostic: diagnostic)
         }
@@ -659,7 +803,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         oldTask?.cancel()
         cleaning = true
         status = "Ending session…"
-        Task {
+        cleanupTask = Task {
             await oldTask?.value
             await oldStreamer?.stop()
             // Keep the screen alive until its capture is fully stopped. Releasing
@@ -675,6 +819,8 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         }
     }
     func stopAll(reason: LocalizedMessage = "Stopped") {
+        roleActivation?.cancel(); roleActivation = nil
+        dismissSuggestion()
         browser?.cancel(); browser = nil; browsing = false
         wantsToListen = false
         pairingGate.invalidate()
@@ -727,7 +873,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         updateViewerHUD()
     }
     func copyDiagnostics() {
-        var details = ["MacPair 0.1.7", ProcessInfo.processInfo.operatingSystemVersionString,
+        var details = ["MacPair 0.1.8", ProcessInfo.processInfo.operatingSystemVersionString,
             L10n.text(role.rawValue), connectionTitle.localized, status.localized, path.localized]
         if connected { details.append("Live: RTT \(rtt), frames \(totalFrames), fps \(fps)") }
         if let previous = lastSession {

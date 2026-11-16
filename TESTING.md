@@ -4,6 +4,18 @@ Version 0.1.1 adds a white highlight sweeping over the stationary gray searching
 
 [中文测试指南](TESTING.zh-CN.md) · [Quick start](README.md)
 
+## Version 0.1.8: automatic discovery and nearby cards
+
+- First choose Display Mac on the receiving Mac. It starts waiting. Reopen both apps: the last roles should restore, with the host searching and the display waiting.
+- With Wi-Fi enabled, an eligible AWDL peer should produce one connection card after a short debounce. Ordinary LAN-only results, missing identities and this Mac must not produce a card.
+- The panel should leave the foreground app and keyboard focus alone. First pairing requires six digits; an already paired Mac skips them. The mode menu supports both Extend and Mirror.
+- Connect is explicit. Merely showing/dismissing the card must not create a virtual display or start screen capture.
+- Remove the peer from range or stop its waiting state while the card is visible: the card should disappear. Closing a card suppresses further cards for that search; Search again permits a new one.
+- Stop waiting manually: reopening the same window must not restart it. Disable automatic discovery in Settings, reopen the app, and confirm it stays disabled.
+- Pairing, Retina resolution, full-screen startup, cleanup and trust revocation use the existing session path.
+
+Local checks passed on 2026-11-17, including universal arm64/x86_64 build and strict signing. They cover the suggestion policy, role restoration/automatic waiting, real Bonjour identity discovery, host startup/opt-out persistence, the existing authentication/Keychain/video suite, and an actual native nonactivating panel that appears/closes without changing foreground focus. Card renders use a generic example Mac name; they are component fixtures. Full physical two-Mac detection/card/Connect acceptance is still required. No distance measurement or standalone/no-Wi-Fi success is claimed.
+
 ## Version 0.1.7: compact connection UI
 
 Check the English and Simplified Chinese interface at approximately 720 × 550:

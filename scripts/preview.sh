@@ -8,6 +8,6 @@ crypto_lib="$(./scripts/build-crypto.sh "$(uname -m)")"
 xcrun swiftc -O -swift-version 5 -parse-as-library -target "$(uname -m)-apple-macosx13.0" \
     -module-cache-path "$task_build_root/ModuleCache" -import-objc-header Sources/NativeBridge.h \
     Sources/App.swift Sources/AppModel.swift Sources/Localization.swift Sources/PeerNetwork.swift Sources/Video.swift \
-    Sources/VirtualScreen.swift Sources/Wire.swift Sources/Pairing.swift Sources/TrustedDevices.swift Tests/Preview.swift \
+    Sources/VirtualScreen.swift Sources/Wire.swift Sources/Pairing.swift Sources/TrustedDevices.swift Sources/Discovery.swift Sources/NearbyDisplayCard.swift Tests/Preview.swift \
     "$object" "$crypto_lib" -lc++ -o "$task_build_root/MacPairPreview"
 "$task_build_root/MacPairPreview" "$task_archive_root/previews" "$@"

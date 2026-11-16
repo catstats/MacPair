@@ -2,9 +2,9 @@
 import SwiftUI
 
 struct MacPairApp: App {
-    @StateObject private var model = AppModel()
+    @StateObject private var model = AppModel(preferences: .standard, showsDiscoveryWindows: true)
     var body: some Scene {
-        WindowGroup("MacPair", id: "compact-main") { MainView(model: model) }
+        WindowGroup("MacPair", id: "compact-main") { MainView(model: model).onAppear { model.startAutomaticBehavior() } }
             .defaultSize(width: 720, height: 550)
             .commands { CommandGroup(replacing: .newItem) {} }
     }
@@ -29,7 +29,7 @@ struct MainView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(alignment: .firstTextBaseline, spacing: 9) {
                             Text("MacPair").font(.title2.bold())
-                            Text(L("Prototype 0.1.7")).font(.caption).foregroundStyle(.secondary)
+                            Text(L("Prototype 0.1.8")).font(.caption).foregroundStyle(.secondary)
                         }
                         Text(L("Your nearby Mac. Your second display.")).font(.caption).foregroundStyle(.secondary)
                     }
@@ -47,7 +47,7 @@ struct MainView: View {
                 }
                 .pickerStyle(.segmented)
                 .disabled(model.occupied || model.listening)
-                .onChange(of: model.role) { _ in model.stopAll() }
+                .onChange(of: model.role) { _ in model.activateRole() }
 
                 if model.role == .receiver { receiverPanel } else { hostPanel }
                 statusPanel
@@ -98,6 +98,11 @@ struct MainView: View {
             Picker(L("Language"), selection: $model.language) {
                 ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
             }
+            Toggle(L("Automatically find displays"), isOn: $model.automaticDiscovery)
+                .disabled(model.occupied)
+                .onChange(of: model.automaticDiscovery) { _ in model.automaticDiscoveryChanged() }
+            Text(L("Show a connection card when an available display is found."))
+                .font(.caption).foregroundStyle(.secondary)
             Divider()
             Text(L("Paired Macs")).font(.headline)
             if model.trustedDevices.isEmpty {
@@ -180,7 +185,7 @@ struct MainView: View {
                 if model.peers.isEmpty {
                     VStack(alignment: .leading, spacing: 5) {
                         if model.browsing { SearchingText(text: L("Looking for displays…")) }
-                        Text(L("On the other Mac, choose Display Mac → Wait for connection."))
+                        Text(L("On the other Mac, choose Display Mac to start waiting."))
                             .font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
                 } else {

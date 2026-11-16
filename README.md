@@ -2,7 +2,7 @@
 
 Extend your desktop onto a nearby Mac, or mirror your main screen. The user has confirmed that the two-Mac display works when the Macs are connected to different Wi-Fi networks.
 
-**Prototype 0.1.7. English is the default; switch to 简体中文 from Settings → Language.** [中文说明](README.zh-CN.md)
+**Prototype 0.1.8. English is the default; switch to 简体中文 from Settings → Language.** [中文说明](README.zh-CN.md)
 
 The local protocol, secure-pairing, H.264, and virtual-display checks have passed on the development Mac. **User report on 2026-11-16: virtual display and operation across different Wi-Fi networks passed. The user-described “no Wi-Fi” scenario did not work; whether the Wi-Fi radio was off or merely disconnected was not specified.** Standalone operation without an access point remains unconfirmed. See [test instructions and verification record](TESTING.md).
 
@@ -10,7 +10,7 @@ The local protocol, secure-pairing, H.264, and virtual-display checks have passe
 
 Double-click `Start MacPair.command`. In an iCloud checkout the runnable App is kept in this Mac's local cache; the launcher finds it automatically. Outside iCloud, the default App path is `build/MacPair.app`.
 
-To use a second Mac, copy `build/MacPair-0.1.7.zip` to it, unzip it, and open MacPair.app. The package includes the full source. The second Mac does not need Xcode.
+To use a second Mac, copy `build/MacPair-0.1.8.zip` to it, unzip it, and open MacPair.app. The package includes the full source. The second Mac does not need Xcode.
 
 Requirements: macOS 13 or later on both Macs, with compatible Apple peer-to-peer Wi-Fi hardware. The app is a universal arm64/x86_64 build. Both architectures have been compiled; the processor and OS versions of the user-tested pair were not separately recorded.
 
@@ -19,10 +19,10 @@ This local build is ad hoc signed and is not notarized by Apple. If macOS blocks
 ## Connect
 
 1. Put both Macs nearby. **Keep Wi-Fi switched on.**
-2. On the display Mac, choose **Display Mac → Wait for connection**.
+2. On the display Mac, choose **Display Mac**. It starts waiting automatically; use **Wait for connection** if you stopped it earlier.
 3. Allow **Local Network** access if macOS asks. Allow the app's incoming connection if the firewall asks.
-4. On the host, choose **Host Mac → Find nearby displays**, then select the Mac marked **Ready to connect**.
-5. First pairing: enter its **six-digit number** in the labelled Pairing code field. Remembered Macs need no code.
+4. The host searches automatically and shows a nearby-display card. You can also use **Find nearby displays** and select the Mac marked **Ready to connect**.
+5. First pairing: enter its **six-digit number** in the card or the main window. Remembered Macs need no code.
 6. Choose **Extend** or **Mirror** and click **Connect**. The host needs Screen Recording permission; grant it and quit/reopen the same App if required.
 7. The display opens in full screen automatically. Press **Esc** or double-click to leave full screen.
 
@@ -30,9 +30,19 @@ The main window is approximately 720 × 550. The gear button opens **Settings**,
 
 After disconnecting, the main status says **Disconnected**. Previous RTT and frame counts are labelled **Last session**; they are separate from live statistics and are not end-to-end display latency.
 
+## Nearby connection cards
+
+Version 0.1.8 remembers the last Host Mac / Display Mac role. Opening the app starts discovery on a host and waiting on a display. Both apps must be running, and the second Mac must be in Display Mac mode. This uses the existing direct wireless discovery; it does not measure physical distance or use BLE.
+
+An available direct peer with a device identity can show a small app-owned card. Choose Extend or Mirror, then Connect. First-time peers still require the six-digit code; remembered peers use their saved Keychain credential. Discovery alone never authenticates a peer or starts screen sharing.
+
+The card appears without activating MacPair or taking keyboard focus. A peer that disappears loses its card. Closing it pauses further cards until Search again or reopening the app. Self, unidentified and LAN-only results do not produce cards. Disable **Settings → Automatically find displays** to use manual search. Stopping the display's waiting state is respected until you explicitly restart it or reopen the app.
+
+If the host still needs Screen Recording permission, Connect brings the main window forward with the existing permission instructions. No login item or always-running system service is installed. Automatic discovery is not automatic session reconnection.
+
 ## Pair once; reconnect without typing
 
-Use **0.1.7** on both Macs for this interface. Protocol v3 and saved pairings from 0.1.6 remain compatible; builds before 0.1.6 are not compatible.
+Use **0.1.8** on both Macs for automatic discovery and role restoration. Protocol v3 and saved pairings from 0.1.6–0.1.7 remain compatible; builds before 0.1.6 are not compatible.
 
 - A new Mac uses a uniformly random **six-digit numeric code**, including possible leading zeroes. It expires after **5 minutes** and is invalidated on successful authentication. Spaces or a hyphen are accepted when pasting.
 - After both Macs confirm the saved pairing, the app stores a **strong per-device credential in the local macOS login Keychain**. It never saves the six-digit code. The app does not synchronize these credentials through iCloud.
@@ -46,7 +56,7 @@ The short code is used with the existing **BoringSSL SPAKE2 password-authenticat
 
 ## Choose Mirror or Extend
 
-Install **0.1.7 on both Macs**. On the host, choose the mode before starting:
+Use **0.1.8 on both Macs**. On the host, choose the mode before starting:
 
 | Mode | What the display Mac shows | Start button |
 | --- | --- | --- |
@@ -59,7 +69,7 @@ Mirror uses ScreenCaptureKit to capture the existing main display. It does not c
 
 ## Display resolution (Extend)
 
-Both Macs must run **0.1.7**; the sizing handshake uses protocol v3. Choose the resolution on the host before connecting:
+Use **0.1.8** on both Macs; the sizing handshake uses protocol v3. Choose the resolution on the host before connecting:
 
 | Setting | Desktop space | Text size on the receiver |
 | --- | --- | --- |
@@ -107,8 +117,10 @@ No network-fetched packages, cloud services, or paid developer account are neede
 ./scripts/build.sh --native    # faster, current architecture only
 ./scripts/test.sh              # real local secure-pairing and H.264 checks
 ./scripts/test.sh --pairing    # remembered reconnect, Forget, expiry/lockout and scoped Keychain checks
+./scripts/test.sh --discovery  # also checks automatic roles and the nonactivating native card
 ./scripts/test.sh --display    # real 1×/2× displays + temporary fullscreen sizing check
 ./scripts/preview.sh           # render English/Chinese UI layout fixtures
+./scripts/preview.sh --nearby  # first-pairing and remembered-Mac card fixtures
 ./scripts/package.sh           # app + guides + complete source
 ```
 

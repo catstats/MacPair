@@ -34,6 +34,10 @@ struct DiscoveredPeer: Identifiable {
     let interfaces: String
     let deviceIdentity: PeerIdentity?
     var isDirect: Bool { directInterface != nil }
+    var displayName: String {
+        let prefix = "MacPair · "
+        return name.hasPrefix(prefix) ? String(name.dropFirst(prefix.count)) : name
+    }
 
     init?(_ result: NWBrowser.Result) {
         guard case let .service(name, type, domain, _) = result.endpoint else { return nil }

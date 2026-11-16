@@ -2,6 +2,7 @@
 import Foundation
 import Network
 import AppKit
+import SwiftUI
 import VideoToolbox
 import Security
 
@@ -25,6 +26,8 @@ enum DiagnosticTests {
         do {
             try localization()
             print("PASS: English/Chinese UI messages, live interpolation and language restoration")
+            try discoverySuggestions()
+            print("PASS: nearby suggestion gating, trusted priority, stable identity, dismissal and manual reset")
             try framing()
             print("PASS: fragmented/coalesced TCP packets and invalid lengths")
             try handshakeValidation()
@@ -66,6 +69,37 @@ enum DiagnosticTests {
         L10n.setLanguage(.english)
         try expect(reconnect.localized == "Connection ended Waiting for the host to reconnect.", "Switching back to English failed")
     }
+    private static func discoverySuggestions() throws {
+        let local = "self", first = "display-a", known = "display-b"
+        let candidates = [
+            DiscoveryCandidate(deviceID: local, name: "This Mac", direct: true, trusted: true),
+            DiscoveryCandidate(deviceID: nil, name: "Missing identity", direct: true, trusted: false),
+            DiscoveryCandidate(deviceID: "lan", name: "LAN only", direct: false, trusted: true),
+            DiscoveryCandidate(deviceID: first, name: "A", direct: true, trusted: false),
+            DiscoveryCandidate(deviceID: known, name: "B", direct: true, trusted: true)]
+        var policy = DiscoverySuggestions()
+        func pick(_ value: DiscoverySuggestions, enabled: Bool = true, host: Bool = true,
+                  busy: Bool = false, editing: Bool = false) -> String? {
+            value.next(in: candidates, localID: local, enabled: enabled, host: host,
+                busy: busy, editingCode: editing)
+        }
+        try expect(pick(policy) == known, "Remembered displays should be offered first")
+        try expect(pick(policy, enabled: false) == nil && pick(policy, host: false) == nil
+            && pick(policy, busy: true) == nil && pick(policy, editing: true) == nil,
+            "Suggestions ignored disabled/receiver/session/editing state")
+        policy.didOffer(known)
+        try expect(pick(policy) == first, "Presented stable identities were offered again")
+        policy.didOffer(first)
+        try expect(pick(policy) == nil, "Self, LAN-only or unidentified peers triggered a suggestion")
+        let renamed = [DiscoveryCandidate(deviceID: known, name: "A different name", direct: true, trusted: true)]
+        try expect(policy.next(in: renamed, localID: local, enabled: true, host: true, busy: false, editingCode: false) == nil,
+                   "Renaming bypassed suggestion suppression")
+        policy.reset(); policy.pause()
+        try expect(pick(policy) == nil, "Dismissed cards kept interrupting")
+        policy.reset()
+        try expect(pick(policy) == known, "An explicit new search did not restore suggestions")
+    }
+
     private static func framing() throws {
         let payload = Data((0..<4096).map { UInt8($0 % 251) })
         let combined = Wire.frame(.hello, Data("hello".utf8)) + Wire.frame(.video, payload) + Wire.frame(.ready)
@@ -442,8 +476,11 @@ enum DiagnosticTests {
             let hostID = PeerIdentity(id: UUID().uuidString, name: "Test main Mac")
             let displayID = PeerIdentity(id: UUID().uuidString, name: "Test display Mac")
             let hostStore = TrustStore(memoryOnly: true), displayStore = TrustStore(memoryOnly: true)
-            var model = AppModel(trustStore: displayStore, identity: displayID)
-            model.role = .receiver
+            let preferenceSuite = "local.macpair.prototype.test.discovery." + UUID().uuidString
+            let preferences = UserDefaults(suiteName: preferenceSuite)!
+            defer { preferences.removePersistentDomain(forName: preferenceSuite) }
+            preferences.set(MacRole.receiver.rawValue, forKey: "MacPairRole")
+            var model = AppModel(trustStore: displayStore, identity: displayID, preferences: preferences)
             @MainActor func waitFor(_ predicate: () -> Bool, _ message: LocalizedMessage) async throws {
                 for _ in 0..<100 {
                     if predicate() { return }
@@ -469,8 +506,9 @@ enum DiagnosticTests {
                 return link
             }
             do {
-                model.listen()
-                try await waitFor({ model.listening }, "Display did not start waiting")
+                try expect(model.role == .receiver, "The saved display role was not restored")
+                model.startAutomaticBehavior()
+                try await waitFor({ model.listening }, "The saved display role did not start waiting automatically")
                 let browser = NWBrowser(for: .bonjourWithTXTRecord(type: PeerNetwork.serviceType, domain: nil),
                     using: PeerNetwork.discoveryParameters())
                 let discovery = DiscoveryProbe()
@@ -562,9 +600,36 @@ enum DiagnosticTests {
                 oneShot.cancel()
                 model.stopAll()
                 print("PASS: declined/failed credential saving keeps the session encrypted and removes half-saved trust")
+
+                preferences.set(MacRole.host.rawValue, forKey: "MacPairRole")
+                model = AppModel(trustStore: TrustStore(memoryOnly: true), identity: hostID, preferences: preferences)
+                model.startAutomaticBehavior()
+                try await waitFor({ model.browsing }, "Host did not start discovery automatically")
+                model.automaticDiscovery = false
+                model.automaticDiscoveryChanged()
+                try expect(!model.browsing && model.suggestedDeviceID == nil, "Discovery opt-out left browsing/cards active")
+                model.stopAll()
+                try await waitFor({ !model.occupied }, "Host did not finish stopping")
+                model = AppModel(trustStore: TrustStore(memoryOnly: true), identity: hostID, preferences: preferences)
+                try expect(!model.automaticDiscovery && model.role == .host, "Role/discovery preferences were not restored")
+                model.startAutomaticBehavior()
+                try await waitFor({ !model.occupied }, "Opted-out host did not finish startup")
+                try expect(!model.browsing, "Startup ignored the discovery opt-out")
+                model.role = .receiver
+                model.activateRole()
+                try await waitFor({ model.listening }, "Switching to Display Mac did not start waiting")
+                try expect(preferences.string(forKey: "MacPairRole") == MacRole.receiver.rawValue,
+                           "Selecting a role did not persist it")
+                model.stopAll()
+                try await waitFor({ !model.occupied }, "Role automation did not stop")
+                model.startAutomaticBehavior()
+                try expect(!model.listening && !model.browsing, "Repeated window appearance overrode an explicit Stop")
+                print("PASS: automatic host discovery, restored display waiting, persisted opt-out and explicit Stop")
+                preferences.removePersistentDomain(forName: preferenceSuite)
                 exit(0)
             } catch {
                 model.stopAll()
+                preferences.removePersistentDomain(forName: preferenceSuite)
                 fputs("FAIL: \(error.localizedDescription)\n", stderr)
                 exit(1)
             }
@@ -616,6 +681,36 @@ enum DiagnosticTests {
             print("PASS: scoped real macOS Keychain save/read/remove; no user pairing records accessed")
             exit(0)
         } catch { fputs("FAIL: \(error.localizedDescription)\n", stderr); exit(1) }
+    }
+
+    @MainActor
+    static func nearbyPanelSmokeTest() -> Never {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.finishLaunching()
+        let previouslyActive = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        Task { @MainActor in
+            do {
+                let panel = NearbyDisplayPanel.make(remembered: true,
+                    content: NearbyDisplayCard(name: "MacPair UI test", remembered: true,
+                        mode: .constant(.extend), code: .constant(""), connect: {}, dismiss: {}))
+                panel.orderFrontRegardless()
+                try await Task.sleep(for: .milliseconds(300))
+                let visible = panel.isVisible
+                let tookFocus = panel.isKeyWindow || panel.isMainWindow
+                    || NSWorkspace.shared.frontmostApplication?.processIdentifier != previouslyActive
+                panel.close()
+                try expect(visible && !tookFocus, "The discovery panel was hidden or took focus")
+                try expect(!panel.isVisible, "The discovery panel did not close")
+                print("PASS: real native discovery panel appears without changing foreground focus and closes cleanly")
+                exit(0)
+            } catch {
+                fputs("FAIL: " + error.localizedDescription + "\n", stderr)
+                exit(1)
+            }
+        }
+        app.run()
+        exit(1)
     }
 
     @MainActor
@@ -702,6 +797,7 @@ enum MacPairLauncher {
         if CommandLine.arguments.contains("--pairing-smoke-test") { DiagnosticTests.pairingSmokeTest() }
         if CommandLine.arguments.contains("--keychain-read-probe") { DiagnosticTests.keychainReadProbe() }
         if CommandLine.arguments.contains("--keychain-smoke-test") { DiagnosticTests.keychainSmokeTest() }
+        if CommandLine.arguments.contains("--nearby-panel-smoke-test") { DiagnosticTests.nearbyPanelSmokeTest() }
         if CommandLine.arguments.contains("--receiver-smoke-test") { DiagnosticTests.receiverSmokeTest() }
         if CommandLine.arguments.contains("--mirror-smoke-test") { MirrorCaptureCheck.run() }
         MacPairApp.main()

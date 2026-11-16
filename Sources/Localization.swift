@@ -19,6 +19,15 @@ enum L10n {
         language == .english ? english : chinese[english] ?? english
     }
     private static let chinese: [String: String] = [
+        "Prototype 0.1.8": "原型 0.1.8",
+        "Nearby Mac detected": "发现附近的 Mac",
+        "Available as a second display": "可作为第二块屏幕",
+        "Not now": "暂不连接",
+        "MacPair · Nearby display": "MacPair · 附近的副屏",
+        "Automatically find displays": "自动寻找副屏",
+        "Show a connection card when an available display is found.": "发现可用的副屏时显示连接卡片。",
+        "Automatic discovery is off. Choose Find nearby displays to search.": "自动发现已关闭，可点击「搜索附近副屏」手动查找。",
+        "On the other Mac, choose Display Mac to start waiting.": "在另一台 Mac 选择「这台是副屏」，即可开始等待连接。",
         "Select this Mac on the host. Paired Macs need no code.": "在主机上选择这台 Mac，已配对的 Mac 无需输码。",
         "Settings": "设置",
         "Prototype 0.1.7": "原型 0.1.7",
