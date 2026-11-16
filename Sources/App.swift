@@ -26,7 +26,7 @@ struct MainView: View {
                     Picker(L("Language"), selection: $model.language) {
                         ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
                     }.frame(width: 185)
-                    Text(L("Prototype 0.1.3")).font(.caption).padding(7).background(.blue.opacity(0.1), in: Capsule())
+                    Text(L("Prototype 0.1.4")).font(.caption).padding(7).background(.blue.opacity(0.1), in: Capsule())
                 }
                 Text(L("No router, internet, or Apple ID needed. Keep Wi-Fi on; Bluetooth is recommended."))
                     .font(.callout).foregroundStyle(.secondary)

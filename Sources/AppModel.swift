@@ -408,7 +408,7 @@ final class AppModel: ObservableObject {
         }
     }
     func copyDiagnostics() {
-        let text = (["MacPair 0.1.3", ProcessInfo.processInfo.operatingSystemVersionString,
+        let text = (["MacPair 0.1.4", ProcessInfo.processInfo.operatingSystemVersionString,
                      L10n.text(role.rawValue), status.localized, path.localized, "RTT \(rtt), frames \(totalFrames), fps \(fps)"] + events.map(\.localized)).joined(separator: "\n")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)

@@ -24,6 +24,7 @@ enum L10n {
         "Mirror": "镜像",
         "Prototype 0.1.2": "原型 0.1.2",
         "Prototype 0.1.3": "原型 0.1.3",
+        "Prototype 0.1.4": "原型 0.1.4",
         "Extend adds a separate desktop; drag windows onto it.": "扩展会创建独立桌面，可以把窗口拖进去。",
         "Mirror shows the host's main screen on the display Mac.": "镜像会在副屏 Mac 上显示主机的主屏幕。",
         "Mirror display": "开始镜像",

@@ -28,6 +28,7 @@ else
 fi
 cp Resources/Info.plist "$stage/Contents/Info.plist"
 cp LICENSE "$stage/Contents/Resources/LICENSE"
+./scripts/build-icon.sh "$stage/Contents/Resources/MacPair.icns"
 ditto Resources/zh-Hans.lproj "$stage/Contents/Resources/zh-Hans.lproj"
 codesign --force --sign - --identifier local.macpair.prototype \
     --requirements '=designated => identifier "local.macpair.prototype"' "$stage"

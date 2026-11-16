@@ -2,7 +2,7 @@
 
 Extend your desktop onto a nearby Mac, or mirror your main screen. The user has confirmed that the two-Mac display works when the Macs are connected to different Wi-Fi networks.
 
-**Prototype 0.1.3. English is the default; switch to 简体中文 from the language menu.** [中文说明](README.zh-CN.md)
+**Prototype 0.1.4. English is the default; switch to 简体中文 from the language menu.** [中文说明](README.zh-CN.md)
 
 The local protocol, TLS, H.264, and virtual-display checks have passed on the development Mac. **User report on 2026-11-16: virtual display and operation across different Wi-Fi networks passed. The user-described “no Wi-Fi” scenario did not work; whether the Wi-Fi radio was off or merely disconnected was not specified.** Standalone operation without an access point remains unconfirmed. See [test instructions and verification record](TESTING.md).
 
@@ -10,7 +10,7 @@ The local protocol, TLS, H.264, and virtual-display checks have passed on the de
 
 Double-click `Start MacPair.command`. In an iCloud checkout the runnable App is kept in this Mac's local cache; the launcher finds it automatically. Outside iCloud, the default App path is `build/MacPair.app`.
 
-To use a second Mac, copy `build/MacPair-0.1.3.zip` to it, unzip it, and open MacPair.app. The package includes the full source. The second Mac does not need Xcode.
+To use a second Mac, copy `build/MacPair-0.1.4.zip` to it, unzip it, and open MacPair.app. The package includes the full source. The second Mac does not need Xcode.
 
 Requirements: macOS 13 or later on both Macs, with compatible Apple peer-to-peer Wi-Fi hardware. The app is a universal arm64/x86_64 build. Both architectures have been compiled; the processor and OS versions of the user-tested pair were not separately recorded.
 
@@ -30,7 +30,7 @@ This test requires no Screen Recording permission and creates no virtual screen.
 
 ## Choose Mirror or Extend
 
-Install **0.1.3 on both Macs**. On the host, choose the mode before starting:
+Install **0.1.4 on both Macs**. On the host, choose the mode before starting:
 
 | Mode | What the display Mac shows | Start button |
 | --- | --- | --- |
@@ -125,6 +125,10 @@ git diff
 git add -A
 git commit -m "Describe the change"
 ```
+
+## Branding
+
+Both supplied logos are in Resources/Branding/. MacPair_Icon.png is the application icon source; the build creates the macOS .icns resource automatically.
 
 ## Sources and license
 
