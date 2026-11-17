@@ -1,6 +1,6 @@
 {
   "name": "macpair-website",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "MacPair product website, built with AstroWind.",
   "type": "module",
   "private": true,

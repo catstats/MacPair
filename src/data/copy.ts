@@ -51,7 +51,7 @@ const english = {
       {
         icon: 'tabler:lock',
         title: 'Nearby. And yours.',
-        body: 'Your host finds available display Macs and offers a connection card. Pair once with six digits; remembered Macs need no code. Your connection stays encrypted.',
+        body: 'Your host finds available display Macs and offers a connection card. Pair with six digits, then reconnect without a code while both apps stay open. Pairings stay in memory; no Keychain access. Your connection stays encrypted.',
         detail: 'Your two Macs. A direct connection.',
       },
     ],
@@ -70,13 +70,13 @@ const english = {
       },
       {
         title: 'Pair. Then make yourself some room.',
-        body: 'Your main Mac searches automatically. In the connection card, enter the code once, choose <strong>Extend</strong> or <strong>Mirror</strong>, and click <strong>Connect</strong>. Remembered Macs skip the code.',
+        body: 'Your main Mac searches automatically. In the connection card, enter the code once, choose <strong>Extend</strong> or <strong>Mirror</strong>, and click <strong>Connect</strong>. Keep both apps open to reconnect without a code. Reopening either app requires a new code.',
       },
     ],
     permissionsTitle: 'First time opening MacPair?',
     permissions: [
       'MacPair is locally signed, not an Apple-notarized release. If macOS blocks it, use the app-specific <strong>System Settings → Privacy &amp; Security → Open Anyway</strong> option.',
-      'Allow Local Network on both Macs. Your main Mac also needs Screen Recording: grant it, then quit and reopen MacPair. The display Mac needs no Screen Recording permission. The login Keychain stores your pairing credential. For MacPair’s saved-pairing item, Always Allow can retain access authorization. Remove a saved pairing any time under <strong>Settings → Paired Macs → Forget</strong>. Use the main Mac’s keyboard and trackpad; audio and display-side input are not included.',
+      'Allow Local Network on both Macs. Your main Mac also needs Screen Recording: grant it, then quit and reopen MacPair. The display Mac needs no Screen Recording permission. Pairing credentials stay only in memory; MacPair does not access Keychain. Reopening either app requires a new six-digit code. Remove a session pairing under <strong>Settings → Session pairings → Forget</strong>. Use the main Mac’s keyboard and trackpad; audio and display-side input are not included.',
     ],
   },
   download: {
@@ -97,7 +97,7 @@ const english = {
       'The earlier prototype was user-tested successfully across two Macs on different Wi-Fi networks. Standalone operation without joining any Wi-Fi network is still unconfirmed; the reported “no Wi-Fi” attempt failed.',
       'Version ' +
         product.version +
-        ' adds bounded video feedback, overlapping encode/send work, and stage timings. Generated encrypted Retina video and delayed-receiver checks passed locally. Wireless responsiveness, discovery cards, and Retina sizing still need a two-Mac retest. Both updated peers target up to 60 fps; older peers retain 30 fps. These are targets, not measured guarantees. Mirror fits within 1280 × 800; Extend keeps the display Mac’s negotiated pixel dimensions.',
+        ' removes Keychain access and keeps pairing credentials only in memory. Reopening either app requires a new code. The bounded video feedback, overlapping encode/send work and stage timings are unchanged. Generated encrypted Retina video and delayed-receiver checks passed locally. Wireless responsiveness, discovery cards, and Retina sizing still need a two-Mac retest. Both updated peers target up to 60 fps; older peers retain 30 fps. These are targets, not measured guarantees. Mirror fits within 1280 × 800; Extend keeps the display Mac’s negotiated pixel dimensions.',
       'Virtual displays use an experimental macOS interface. Pairing has not had an independent security review. Discovery uses availability, not physical distance. Both apps must be running. Audio, display-side controls, and automatic reconnection are not included. See the guides inside the download for test steps and compatibility notes.',
     ],
   },
@@ -112,8 +112,8 @@ const english = {
     caption: 'Screens rendered from our real app build, with an example pairing code.',
     host: 'Host Mac',
     display: 'Display Mac',
-    hostSrc: '/screenshots/macpair-host-0.1.9.png',
-    displaySrc: '/screenshots/macpair-display-0.1.9.png',
+    hostSrc: '/screenshots/macpair-host-0.1.10.png',
+    displaySrc: '/screenshots/macpair-display-0.1.10.png',
     hostAlt: 'MacPair Host Mac interface showing Extend and Default resolution dropdowns',
     displayAlt: 'MacPair Display Mac interface waiting for a connection with an example six-digit pairing code',
   },
@@ -152,7 +152,7 @@ const chinese: typeof english = {
   ogLocale: 'zh_CN',
   title: 'MacPair — 两台 Mac，更多空间。',
   description:
-    '让身边的 Mac 成为无线副屏。用 MacPair 扩展或镜像桌面，支持 Retina 缩放与记住配对。免费、开源的原生 macOS App。',
+    '让身边的 Mac 成为无线副屏。用 MacPair 扩展或镜像桌面，支持 Retina 缩放与会话内配对。免费、开源的原生 macOS App。',
   skip: '跳到主要内容',
   imageAlt: 'MacPair 蓝色双显示器标志',
   navigation: {
@@ -198,7 +198,7 @@ const chinese: typeof english = {
       {
         icon: 'tabler:lock',
         title: '就在附近，也只属于你。',
-        body: '主机自动发现可用的副屏 Mac，并显示连接卡片。首次输入六位数字配对，记住后再次连接无需输码。连接全程加密。',
+        body: '主机自动发现可用的副屏 Mac，并显示连接卡片。首次输入六位数字配对，保持两端 App 打开时重连免输码。配对仅保存在内存中，不访问钥匙串；连接全程加密。',
         detail: '你的两台 Mac，直接相连。',
       },
     ],
@@ -217,13 +217,13 @@ const chinese: typeof english = {
       },
       {
         title: '配对连接，桌面随之展开。',
-        body: '主 Mac 会自动搜索。在连接卡片中输入一次配对码，选择<strong>扩展（Extend）</strong>或<strong>镜像（Mirror）</strong>，点击<strong>连接（Connect）</strong>。已记住的 Mac 再次连接无需输码。',
+        body: '主 Mac 会自动搜索。在连接卡片中输入一次配对码，选择<strong>扩展（Extend）</strong>或<strong>镜像（Mirror）</strong>，点击<strong>连接（Connect）</strong>。保持两端 App 打开时重连免输码；重开任一端后需重新输入新配对码。',
       },
     ],
     permissionsTitle: '第一次打开 MacPair？',
     permissions: [
       'MacPair 采用本地签名，尚未经过 Apple 公证。如果 macOS 拦截，请前往<strong>系统设置 → 隐私与安全性 → 仍要打开</strong>，仅为 MacPair 放行。',
-      '请在两台 Mac 上允许“本地网络”权限。主 Mac 还需允许“屏幕录制”，授权后退出并重新打开 MacPair；副屏 Mac 无需此权限。钥匙串用于保存配对凭证；如系统反复询问 MacPair 的配对条目，可选择“始终允许”保留访问授权。你随时可以在<strong>设置 → 已配对的 Mac → 忘记</strong>中删除配对。请使用主 Mac 的键盘和触控板；当前不传输音频，也不支持在副屏端输入。',
+      '请在两台 Mac 上允许“本地网络”权限。主 Mac 还需允许“屏幕录制”，授权后退出并重新打开 MacPair；副屏 Mac 无需此权限。配对凭证只保存在内存中，不访问钥匙串；重开任一端后需重新输入六位码。你可以在<strong>设置 → 本次配对 → 忘记</strong>中清除内存配对。请使用主 Mac 的键盘和触控板；当前不传输音频，也不支持在副屏端输入。',
     ],
   },
   download: {
@@ -240,7 +240,7 @@ const chinese: typeof english = {
     testing: [
       '较早版本已由用户在连接不同 Wi-Fi 网络的两台 Mac 上测试通过。完全不加入任何 Wi-Fi 网络的独立运行仍未确认；此前反馈的“无 Wi-Fi”尝试未成功。',
       product.version +
-        ' 版限制了在途视频帧数量，让编码与发送并行，并增加了各阶段耗时记录。本地生成的加密 Retina 视频测试和慢接收端测试已通过。无线跟手感、发现卡片和 Retina 尺寸仍需在两台真实 Mac 上复测。两端均更新后，目标最高为 60 fps；旧版连接保留 30 fps。这些是目标值，并非实测保证。镜像画面限制在 1280 × 800 以内；扩展模式保留与副屏 Mac 协商的像素尺寸。',
+        ' 版移除钥匙串访问，配对凭证仅保存在内存；重开任一端后需重新输入配对码。视频链路继续限制在途帧数量、并行编码与发送，并保留各阶段耗时记录。本地生成的加密 Retina 视频测试和慢接收端测试已通过。无线跟手感、发现卡片和 Retina 尺寸仍需在两台真实 Mac 上复测。两端均更新后，目标最高为 60 fps；旧版连接保留 30 fps。这些是目标值，并非实测保证。镜像画面限制在 1280 × 800 以内；扩展模式保留与副屏 Mac 协商的像素尺寸。',
       '虚拟显示器使用实验性的 macOS 接口，配对机制尚未经独立安全审查。自动发现依据设备是否可用，并非测量物理距离。两台 Mac 均需运行 MacPair。当前不包含音频传输、副屏端操控或自动重连。测试步骤与兼容性说明请查看下载包内的指南。',
     ],
   },
@@ -255,8 +255,8 @@ const chinese: typeof english = {
     caption: '由真实 App 构建渲染的界面，配对码为示例。',
     host: '主机 Mac',
     display: '副屏 Mac',
-    hostSrc: '/screenshots/macpair-host-0.1.9-zh.png',
-    displaySrc: '/screenshots/macpair-display-0.1.9-zh.png',
+    hostSrc: '/screenshots/macpair-host-0.1.10-zh.png',
+    displaySrc: '/screenshots/macpair-display-0.1.10-zh.png',
     hostAlt: 'MacPair 中文主机界面，显示扩展模式与默认分辨率下拉菜单',
     displayAlt: 'MacPair 中文副屏界面，显示等待连接状态与示例六位配对码',
   },

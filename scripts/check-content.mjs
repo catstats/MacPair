@@ -22,17 +22,17 @@ assert(
   'Keep the actual prototype verification limits in both languages'
 );
 for (const file of [
-  'public/screenshots/macpair-host-0.1.9.png',
-  'public/screenshots/macpair-display-0.1.9.png',
-  'public/screenshots/macpair-host-0.1.9-zh.png',
-  'public/screenshots/macpair-display-0.1.9-zh.png',
+  'public/screenshots/macpair-host-0.1.10.png',
+  'public/screenshots/macpair-display-0.1.10.png',
+  'public/screenshots/macpair-host-0.1.10-zh.png',
+  'public/screenshots/macpair-display-0.1.10-zh.png',
 ]) {
   assert(fs.statSync(file).size > 1000, file + ' is missing or empty');
 }
 const product = fs.readFileSync('src/data/product.ts', 'utf8');
-for (const file of ['MacPair-0.1.9.zip', 'MacPair-0.1.9-source.zip']) {
+for (const file of ['MacPair-0.1.10.zip', 'MacPair-0.1.10-source.zip']) {
   assert(
-    product.includes('https://github.com/catstats/MacPair/releases/download/v0.1.9/' + file),
+    product.includes('https://github.com/catstats/MacPair/releases/download/v0.1.10/' + file),
     'Downloads must use the verified GitHub Release, independently of the website host'
   );
 }

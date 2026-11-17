@@ -124,7 +124,7 @@ After changes, always verify:
 
 ## MacPair-specific scope
 
-This is now a single-page MacPair product site, not the AstroWind demo. Keep the real AstroWind integration, UI primitives and styles. Use the supplied branding and actual 0.1.9 downloads. Only `/`, `/zh/` and `/404` are page routes; the site is light-only with no blog, pricing, accounts, analytics or newsletter. Navigation is inline and responsive; there is no mobile hamburger.
+This is now a single-page MacPair product site, not the AstroWind demo. Keep the real AstroWind integration, UI primitives and styles. Use the supplied branding and actual 0.1.10 downloads. Only `/`, `/zh/` and `/404` are page routes; the site is light-only with no blog, pricing, accounts, analytics or newsletter. Navigation is inline and responsive; there is no mobile hamburger.
 
 The verified public app repository is https://github.com/catstats/MacPair. Do not invent a customer, testimonial, speed result, offline success or real demo video. The interactive two-Mac visualization is explicitly an illustration; the app screenshots are rendered from the native build. Keep the earlier different-Wi-Fi result distinct from current pairing/Retina's pending physical two-Mac retest. Preserve MacPair GPL and AstroWind MIT notices separately.
 
