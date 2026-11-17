@@ -37,6 +37,8 @@ enum DiagnosticTests {
             try retinaNegotiation()
             print("PASS: receiver logical/backing sizing, 1×/2× presets and tampered-handshake rejection")
             try videoFlowValidation()
+            try smoothnessValidation()
+            print("PASS: negotiated 1/2/3 experiments, legacy fallback, live shrinking, independent nearest-rank p95, latency/FPS rollback guards")
             print("PASS: 60 fps capability negotiation, legacy fallback and bounded authenticated frame credits")
             try shortCodePairing()
             print("PASS: six-digit policy, expiry, lockout, SPAKE2 confirmation, tamper and replay rejection")
@@ -275,6 +277,62 @@ enum DiagnosticTests {
         rejected = false
         do { _ = try VideoAcknowledgement(Data(repeating: 0, count: 20)) } catch { rejected = true }
         try expect(rejected, "A zero video acknowledgement was accepted")
+    }
+
+    private static func smoothnessValidation() throws {
+        let geometry = DisplayGeometry(logicalWidth: 1280, logicalHeight: 832, backingWidth: 2560, backingHeight: 1664, scale: 2)
+        let display = ReceiverDisplayInfo(name: "Generated experiment display", screen: geometry, viewport: geometry)
+        let request = SessionHello(version: Wire.version, mode: "extend", width: 1280, height: 800, fps: 30,
+            pipeline: VideoPipelineOptions(), experiment: VideoExperimentCapability())
+        let response = try request.negotiated(for: display)
+        try response.validateResponse(to: request)
+        try expect(response.experiment != nil && response.width == 2560 && response.height == 1664, "Experiment changed Retina geometry")
+        let old = try request.negotiated(for: display, supportsExperiment: false)
+        try old.validateResponse(to: request)
+        try expect(old.experiment == nil && old.pipeline?.maximumFrames == 2 && old.fps == 60, "Old feedback peer lost its two-frame path")
+        let older = try request.negotiated(for: display, supportsFeedback: false)
+        try older.validateResponse(to: request)
+        try expect(older.experiment == nil && older.pipeline == nil && older.fps == 30, "Legacy fallback enabled an experiment")
+        for capability in [VideoExperimentCapability(version: 2), VideoExperimentCapability(maximumFrames: 4)] {
+            var rejected = false
+            do { try capability.validate() } catch { rejected = true }
+            try expect(rejected, "Invalid experiment capabilities were accepted")
+        }
+        var window = VideoFrameWindow(limit: 3)
+        let ids = (0..<3).map { window.reserve(capturedAt: UInt64($0))! }
+        for id in ids { try window.encoded(id, at: 10) }
+        window.setLimit(1)
+        for id in ids {
+            try expect(window.reserve(capturedAt: 11) == nil, "Shrinking a live window released a credit too early")
+            _ = try window.retire(id, ordered: true)
+        }
+        try expect(window.reserve(capturedAt: 12) != nil, "Shrunken window failed to resume")
+        let metrics = VideoMetrics(); metrics.beginRecording()
+        metrics.event("ack"); metrics.timing("encode", ns: 1_000_000)
+        _ = metrics.snapshot()
+        metrics.event("ack"); metrics.timing("encode", ns: 2_000_000)
+        let recording = metrics.finishRecording()
+        try expect(recording.counts["ack"] == 2 && recording.times["encode"]?.p95 == 2, "UI polling consumed the experiment recording")
+        _ = metrics.finishRecording() // No unsigned underflow after cancellation.
+        try expect(VideoTiming((1...20).map(Double.init)).p95 == 19, "p95 does not use nearest-rank selection")
+        let ack = VideoAcknowledgement(id: 1, dispatchUS: 2, sampleUS: 3, rendererWaitUS: 4, decryptUS: 5)
+        let roundtrip = try VideoAcknowledgement(ack.data)
+        try expect(ack.data.count == 24 && roundtrip.decryptUS == 5, "Extended transport timing was lost")
+        func trial(_ frames: Int, _ fps: Double, _ p95: Double) -> VideoTrial {
+            let m = VideoTrialMeasurements(seconds: 10, counts: ["ack": Int(fps * 10), "capture": 600],
+                times: ["ack": VideoTiming([p95])], peakOutstanding: frames, durationsMS: [:])
+            return VideoTrial(frames: frames, queueDepth: 3, measurements: m)
+        }
+        let baseline = [trial(2, 20, 50), trial(2, 20, 50)]
+        let faster = trial(3, 35, 55), slower = trial(3, 35, 90)
+        try expect(VideoExperimentReport.choose(baseline + [faster, faster]) == 3, "A faster latency-safe window was rejected")
+        try expect(VideoExperimentReport.choose(baseline + [slower, slower]) == 2, "A substantial latency regression was accepted")
+        let smoothBaseline = [trial(2, 40, 70), trial(2, 40, 70)]
+        let responsive = trial(1, 39, 45)
+        try expect(VideoExperimentReport.choose(smoothBaseline + [responsive, responsive]) == 1, "An equally fast lower-latency one-frame window was rejected")
+        try expect(VideoExperimentReport.verificationPasses(responsive, baseline: smoothBaseline), "Lower-latency verification rejected equivalent throughput")
+        try expect(!VideoExperimentReport.verificationPasses(slower, baseline: baseline), "Latency guard failed on verification")
+        try expect(!VideoExperimentReport.verificationPasses(trial(3, 18, 50), baseline: baseline), "FPS verification accepted a regression")
     }
 
     private static func shortCodePairing() throws {
@@ -852,6 +910,7 @@ enum MacPairLauncher {
     @MainActor
     static func main() {
         setbuf(stdout, nil)
+        if CommandLine.arguments.contains("--flow-benchmark") { VideoFlowBenchmark.run() }
         if CommandLine.arguments.contains("--video-pipeline-test") { VideoPipelineCheck.run() }
         if CommandLine.arguments.contains("--performance-test") { VideoBenchmark.run() }
         if CommandLine.arguments.contains("--self-test") { DiagnosticTests.run() }

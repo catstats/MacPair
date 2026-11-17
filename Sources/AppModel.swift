@@ -59,6 +59,17 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     @Published var permission = CGPreflightScreenCaptureAccess()
     @Published var events: [LocalizedMessage] = []
     @Published var videoPerformance = ""
+    @Published private(set) var smoothnessRunning = false
+    @Published private(set) var smoothnessStatus = ""
+    @Published private(set) var smoothnessResults = ""
+    @Published private(set) var smoothnessReportURL: URL?
+    private var smoothnessTask: Task<Void, Never>?
+    private var smoothnessWindow: NSWindow?
+    private var remoteRendererStats: VideoRendererStatistics?
+    private var rendererStatsPending = false
+    private var captureDisplayID: CGDirectDisplayID?
+    var canCompareSmoothness: Bool { connected && role == .host && activeHello?.experiment != nil && streamer != nil }
+
     @Published var diagnostic = false
 
     private var browser: NWBrowser?
@@ -452,7 +463,8 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
             requestedHello = SessionHello(version: Wire.version,
                 mode: testOnly ? "diagnostic" : displayMode.rawValue, width: width, height: height, fps: 30,
                 resolution: !testOnly && displayMode == .extend ? resolution : .recommended,
-                pipeline: testOnly ? nil : VideoPipelineOptions())
+                pipeline: testOnly ? nil : VideoPipelineOptions(),
+                experiment: testOnly ? nil : VideoExperimentCapability())
             try requestedHello?.validateRequest()
         } catch { status = error.appMessage; return }
         dismissSuggestion()
@@ -600,6 +612,16 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
             }
             displayLayer.enqueue(sample)
             receivedVideoFrame()
+        case .videoStats:
+            guard role == .host, connected, activeHello?.experiment != nil, packet.body.count <= 2048 else {
+                throw PairError.message("Video feedback was not negotiated")
+            }
+            let value = try JSONDecoder().decode(VideoRendererStatistics.self, from: packet.body)
+            try value.validate()
+            guard remoteRendererStats == nil || value.at > remoteRendererStats!.at else {
+                throw PairError.message("Invalid renderer statistics")
+            }
+            remoteRendererStats = value
         case .videoFrame, .videoAck:
             throw PairError.message("Video feedback was not negotiated")
         case .failure:
@@ -620,7 +642,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
                 self.activeHello = hello
                 self.logDimensions(hello)
                 if hello.pipeline != nil {
-                    let receiver = VideoReceiver(layer: self.displayLayer, width: hello.width, height: hello.height)
+                    let receiver = VideoReceiver(layer: self.displayLayer, width: hello.width, height: hello.height, maximumFrames: hello.experiment?.maximumFrames ?? 2)
                     receiver.onAcknowledgement = { [weak link] data in link?.send(.videoAck, data) }
                     receiver.onError = { [weak self, weak link] message in
                         DispatchQueue.main.async {
@@ -732,6 +754,17 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
                     if let receiver = self.videoReceiver {
                         let snapshot = receiver.snapshot()
                         self.fps = Int(snapshot.rate("submit").rounded())
+                        if self.activeHello?.experiment != nil, !self.rendererStatsPending {
+                            self.rendererStatsPending = true
+                            let token = self.sessionID
+                            receiver.loadRendererStatistics { [weak self] value in
+                                DispatchQueue.main.async {
+                                    guard let self, self.sessionID == token else { return }
+                                    self.rendererStatsPending = false
+                                    if let value, let data = try? JSONEncoder().encode(value) { self.link?.send(.videoStats, data) }
+                                }
+                            }
+                        }
                         self.videoPerformance = "\(L("System renderer submissions")): \(String(format: "%.1f", snapshot.rate("submit")))/s (\(L("not presentation rate")))\n"
                             + "\(L("Receiver queue / sample / renderer wait")): \(snapshot.milliseconds("dispatch"))/\(snapshot.milliseconds("sample"))/\(snapshot.milliseconds("renderer")) ms"
                     }
@@ -769,7 +802,9 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
                 }
                 try Task.checkCancellation()
                 guard self.sessionID == token else { return }
-                let streamer = try ScreenStreamer(link: link, width: hello.width, height: hello.height, fps: hello.fps, feedback: hello.pipeline != nil)
+                self.captureDisplayID = captureID
+                let streamer = try ScreenStreamer(link: link, width: hello.width, height: hello.height, fps: hello.fps,
+                    feedback: hello.pipeline != nil, maximumFrames: hello.experiment?.maximumFrames ?? 2)
                 self.streamer = streamer
                 streamer.onError = { [weak self] text in
                     DispatchQueue.main.async {
@@ -814,6 +849,8 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         }
     }
     func endSession(reason: LocalizedMessage = "Disconnected") {
+        cancelSmoothnessComparison()
+        captureDisplayID = nil; remoteRendererStats = nil; rendererStatsPending = false
         dismissSuggestion()
         if connected {
             if let streamer {
@@ -942,14 +979,97 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         }
         updateViewerHUD()
     }
+    func cancelSmoothnessComparison() {
+        smoothnessTask?.cancel()
+        (smoothnessWindow?.contentView as? VideoMotionPattern)?.stop()
+        smoothnessWindow?.close(); smoothnessWindow = nil
+    }
+    func revealSmoothnessReport() {
+        if let smoothnessReportURL { NSWorkspace.shared.activateFileViewerSelecting([smoothnessReportURL]) }
+    }
+    func compareSmoothness() {
+        guard canCompareSmoothness, !smoothnessRunning, let streamer, let hello = activeHello,
+              let captureDisplayID, let target = NSScreen.screens.first(where: {
+                  ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == captureDisplayID
+              }) else { return }
+        smoothnessRunning = true; smoothnessResults = ""; smoothnessReportURL = nil
+        let token = sessionID
+        let pattern = VideoMotionPattern(frame: NSRect(origin: .zero, size: target.frame.size))
+        pattern.onCancel = { [weak self] in self?.cancelSmoothnessComparison() }
+        let window = VideoMotionWindow(contentRect: target.frame, styleMask: [.borderless], backing: .buffered, defer: false, screen: target)
+        window.setFrame(target.frame, display: false)
+        window.contentView = pattern; window.level = .floating; window.isReleasedWhenClosed = false
+        window.makeKeyAndOrderFront(nil); window.makeFirstResponder(pattern)
+        smoothnessWindow = window
+        smoothnessTask = Task { [weak self] in
+            guard let self else { return }
+            var trials: [VideoTrial] = []
+            defer {
+                pattern.stop(); window.close()
+                if self.smoothnessWindow === window { self.smoothnessWindow = nil }
+                self.smoothnessRunning = false; self.smoothnessTask = nil
+            }
+            do {
+                // Reverse the second pass to expose order/thermal/network drift.
+                for index in 0..<6 {
+                    let frames = index == 0 || index == 5 ? 2 : (index == 1 || index == 4 ? 1 : 3)
+                    try Task.checkCancellation()
+                    guard self.sessionID == token else { throw CancellationError() }
+                    self.smoothnessStatus = L("Comparing frames: \(frames) · trial \(index + 1)/6 · 12 seconds")
+                    try await streamer.setFrameLimit(frames)
+                    try await Task.sleep(for: .seconds(2))
+                    let rendererBefore = self.remoteRendererStats
+                    streamer.beginRecording()
+                    try await Task.sleep(for: .seconds(10))
+                    trials.append(VideoTrial(frames: frames, queueDepth: 3, measurements: streamer.finishRecording(),
+                        renderer: VideoRendererInterval.between(rendererBefore, self.remoteRendererStats)))
+                }
+                var selected = VideoExperimentReport.choose(trials)
+                var rejected: Int?
+                @MainActor func verify(_ frames: Int) async throws -> VideoTrial {
+                    self.smoothnessStatus = L("Verifying selection: \(frames) frames · 12 seconds")
+                    try await streamer.setFrameLimit(frames)
+                    try await Task.sleep(for: .seconds(2))
+                    let before = self.remoteRendererStats
+                    streamer.beginRecording()
+                    try await Task.sleep(for: .seconds(10))
+                    return VideoTrial(frames: frames, queueDepth: 3, measurements: streamer.finishRecording(),
+                        renderer: VideoRendererInterval.between(before, self.remoteRendererStats))
+                }
+                var verification = try await verify(selected)
+                if selected != 2, !VideoExperimentReport.verificationPasses(verification, baseline: trials) {
+                    rejected = selected; selected = 2; verification = try await verify(2)
+                }
+                let report = VideoExperimentReport(created: Date(), scope: "Real ScreenCaptureKit over authenticated peer connection; renderer submission/ACK, not physical presentation",
+                    context: ["mode": hello.mode, "path": self.path.localized, "os": ProcessInfo.processInfo.operatingSystemVersionString, "encoder": streamer.encoderInfo],
+                    width: hello.width, height: hello.height, targetFPS: hello.fps, trials: trials, selectedFrames: selected, verification: verification, rejectedCandidate: rejected,
+                    latencyRule: VideoExperimentReport.latencyRule, limitations: VideoExperimentReport.limitations)
+                let folder = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+                    .appendingPathComponent("MacPair/Performance", isDirectory: true)
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+                let url = folder.appendingPathComponent("smoothness-" + UUID().uuidString + ".json")
+                let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; encoder.dateEncodingStrategy = .iso8601
+                try encoder.encode(report).write(to: url, options: .atomic)
+                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+                self.smoothnessReportURL = url; self.smoothnessResults = report.text
+                self.smoothnessStatus = L("Comparison complete. Selected \(selected) frame(s) for this session.")
+                self.log("Smoothness report: \(url.path)")
+            } catch {
+                _ = streamer.finishRecording()
+                try? await streamer.setFrameLimit(2)
+                self.smoothnessStatus = error is CancellationError ? L("Comparison cancelled. Restored two-frame default.") : error.localizedDescription
+            }
+        }
+    }
     func copyDiagnostics() {
-        var details = ["MacPair 0.1.10", ProcessInfo.processInfo.operatingSystemVersionString,
+        var details = ["MacPair 0.1.11 RC1", ProcessInfo.processInfo.operatingSystemVersionString,
             L10n.text(role.rawValue), connectionTitle.localized, status.localized, path.localized]
         if connected { details.append("Live: RTT \(rtt), frames \(totalFrames), fps \(fps)"); details.append(videoPerformance) }
         if let previous = lastSession {
             details.append("Last session: RTT \(previous.rtt), frames \(previous.frames), \(previous.path.localized)")
             if let performance = previous.performance { details.append(performance) }
         }
+        if !smoothnessResults.isEmpty { details.append(smoothnessResults) }
         let text = (details + events.map(\.localized)).joined(separator: "\n")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)

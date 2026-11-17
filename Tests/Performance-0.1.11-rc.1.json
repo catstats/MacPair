@@ -1,0 +1,1552 @@
+{
+  "build": "0.1.11 RC1",
+  "captureAttempt": {
+    "reason": "CGPreflightScreenCaptureAccess false in the test process. No capture attempted; queue depth not changed.",
+    "status": "not_run"
+  },
+  "codecBefore": {
+    "framesPerCase": 90,
+    "results": [
+      {
+        "decodeMS": {
+          "mean": 1.0276313882352939,
+          "p95": 1.19125
+        },
+        "encodeMS": {
+          "mean": 5.153280905882351,
+          "p95": 5.972958
+        },
+        "encoderDetails": "encoder=com.apple.videotoolbox.videoencoder.h264.rtvc, hardware-query=-12900, value=nil",
+        "hardwareDecode": true,
+        "hardwareEncode": "unreported",
+        "hardwareRequired": true,
+        "height": 800,
+        "input": "BGRA",
+        "lowLatency": true,
+        "meanEncodedBytes": 763,
+        "sampleBuildMS": {
+          "mean": 0.018666647058823527,
+          "p95": 0.046417
+        },
+        "width": 1230
+      },
+      {
+        "decodeMS": {
+          "mean": 0.8623371647058824,
+          "p95": 1.207917
+        },
+        "encodeMS": {
+          "mean": 4.965196552941176,
+          "p95": 5.909375
+        },
+        "encoderDetails": "encoder=com.apple.videotoolbox.videoencoder.h264.rtvc, hardware-query=-12900, value=nil",
+        "hardwareDecode": true,
+        "hardwareEncode": "unreported",
+        "hardwareRequired": true,
+        "height": 800,
+        "input": "NV12/420v",
+        "lowLatency": true,
+        "meanEncodedBytes": 763,
+        "sampleBuildMS": {
+          "mean": 0.01413925882352941,
+          "p95": 0.035333
+        },
+        "width": 1230
+      },
+      {
+        "decodeMS": {
+          "mean": 2.175212717647059,
+          "p95": 2.829375
+        },
+        "encodeMS": {
+          "mean": 14.186824917647062,
+          "p95": 17.108625
+        },
+        "encoderDetails": "encoder=com.apple.videotoolbox.videoencoder.h264.rtvc, hardware-query=-12900, value=nil",
+        "hardwareDecode": true,
+        "hardwareEncode": "unreported",
+        "hardwareRequired": true,
+        "height": 1664,
+        "input": "BGRA",
+        "lowLatency": true,
+        "meanEncodedBytes": 2627,
+        "sampleBuildMS": {
+          "mean": 0.03529756470588234,
+          "p95": 0.115792
+        },
+        "width": 2560
+      },
+      {
+        "decodeMS": {
+          "mean": 2.1504710235294113,
+          "p95": 3.021833
+        },
+        "encodeMS": {
+          "mean": 12.827410270588237,
+          "p95": 20.008791
+        },
+        "encoderDetails": "encoder=com.apple.videotoolbox.videoencoder.h264.rtvc, hardware-query=-12900, value=nil",
+        "hardwareDecode": true,
+        "hardwareEncode": "unreported",
+        "hardwareRequired": true,
+        "height": 1664,
+        "input": "NV12/420v",
+        "lowLatency": true,
+        "meanEncodedBytes": 2627,
+        "sampleBuildMS": {
+          "mean": 0.01773338823529412,
+          "p95": 0.030209
+        },
+        "width": 2560
+      }
+    ],
+    "scope": "synthetic codec only; excludes screen capture, AWDL and presentation"
+  },
+  "date": "2026-11-17",
+  "finalBuildCadenceValidation": {
+    "latencyRule": "Reject a candidate if callback-to-submission-ACK p95 exceeds baseline by max(10 ms, 20%); require >=10% FPS gain, or for one frame >=95% baseline FPS (baseline >=30) with >=20% lower ACK p95. Defaults remain unchanged outside this session.",
+    "results": [
+      {
+        "artificialACKDelayMS": 35,
+        "frames": 2,
+        "measurements": {
+          "counts": {
+            "ack": 118,
+            "bytes": 369567,
+            "capture": 180,
+            "encode": 117,
+            "replace": 62,
+            "send": 117
+          },
+          "durationsMS": {
+            "creditStall": 1362.680203
+          },
+          "peakOutstanding": 2,
+          "seconds": 2.999407542,
+          "times": {
+            "ack": {
+              "count": 118,
+              "mean": 56.97653102542374,
+              "p95": 66.918416
+            },
+            "ackInterval": {
+              "count": 118,
+              "mean": 25.53678883898304,
+              "p95": 38.193375
+            },
+            "afterEncodeAck": {
+              "count": 118,
+              "mean": 38.112277508474584,
+              "p95": 41.334584
+            },
+            "captureInterval": {
+              "count": 180,
+              "mean": 16.67155439444445,
+              "p95": 17.815
+            },
+            "decrypt": {
+              "count": 118,
+              "mean": 0.03090677966101693,
+              "p95": 0.085
+            },
+            "dispatch": {
+              "count": 118,
+              "mean": 0.06166949152542372,
+              "p95": 0.08
+            },
+            "encode": {
+              "count": 117,
+              "mean": 12.77760575213676,
+              "p95": 14.719042
+            },
+            "encrypt": {
+              "count": 117,
+              "mean": 0.07096471794871793,
+              "p95": 0.148708
+            },
+            "localTransport": {
+              "count": 117,
+              "mean": 0.27318625641025646,
+              "p95": 0.851208
+            },
+            "raw": {
+              "count": 118,
+              "mean": 6.185836474576266,
+              "p95": 15.711542
+            },
+            "renderer": {
+              "count": 118,
+              "mean": 0.17051694915254237,
+              "p95": 0.477
+            },
+            "sample": {
+              "count": 118,
+              "mean": 0.026627118644067783,
+              "p95": 0.049
+            },
+            "send": {
+              "count": 117,
+              "mean": 1.0991192905982914,
+              "p95": 11.607125
+            },
+            "sendQueue": {
+              "count": 117,
+              "mean": 0.027409222222222227,
+              "p95": 0.050917
+            }
+          }
+        },
+        "queueDepth": 3
+      },
+      {
+        "artificialACKDelayMS": 35,
+        "frames": 1,
+        "measurements": {
+          "counts": {
+            "ack": 58,
+            "bytes": 141437,
+            "capture": 180,
+            "encode": 58,
+            "replace": 122,
+            "send": 58
+          },
+          "durationsMS": {
+            "creditStall": 2186.32917
+          },
+          "peakOutstanding": 1,
+          "seconds": 2.999961208,
+          "times": {
+            "ack": {
+              "count": 58,
+              "mean": 59.82618393103449,
+              "p95": 67.088542
+            },
+            "ackInterval": {
+              "count": 58,
+              "mean": 51.637360620689655,
+              "p95": 54.864125
+            },
+            "afterEncodeAck": {
+              "count": 58,
+              "mean": 38.28772853448275,
+              "p95": 40.983209
+            },
+            "captureInterval": {
+              "count": 180,
+              "mean": 16.665821527777776,
+              "p95": 18.540125
+            },
+            "decrypt": {
+              "count": 58,
+              "mean": 0.0329655172413793,
+              "p95": 0.069
+            },
+            "dispatch": {
+              "count": 58,
+              "mean": 0.026879310344827587,
+              "p95": 0.041
+            },
+            "encode": {
+              "count": 58,
+              "mean": 13.331572517241375,
+              "p95": 14.516917
+            },
+            "encrypt": {
+              "count": 58,
+              "mean": 0.10324932758620692,
+              "p95": 0.13475
+            },
+            "localTransport": {
+              "count": 58,
+              "mean": 0.28800572413793113,
+              "p95": 0.554959
+            },
+            "raw": {
+              "count": 58,
+              "mean": 8.124774448275861,
+              "p95": 15.15175
+            },
+            "renderer": {
+              "count": 58,
+              "mean": 0.22513793103448276,
+              "p95": 0.557
+            },
+            "sample": {
+              "count": 58,
+              "mean": 0.0889655172413793,
+              "p95": 0.053
+            },
+            "send": {
+              "count": 58,
+              "mean": 0.475366396551724,
+              "p95": 0.908875
+            },
+            "sendQueue": {
+              "count": 58,
+              "mean": 0.030795965517241366,
+              "p95": 0.055875
+            }
+          }
+        },
+        "queueDepth": 3
+      },
+      {
+        "artificialACKDelayMS": 35,
+        "frames": 3,
+        "measurements": {
+          "counts": {
+            "ack": 153,
+            "bytes": 492695,
+            "capture": 180,
+            "encode": 153,
+            "replace": 26,
+            "send": 152
+          },
+          "durationsMS": {
+            "creditStall": 412.066586
+          },
+          "peakOutstanding": 3,
+          "seconds": 3.000215792,
+          "times": {
+            "ack": {
+              "count": 153,
+              "mean": 63.81555499346405,
+              "p95": 99.574417
+            },
+            "ackInterval": {
+              "count": 153,
+              "mean": 19.533414215686282,
+              "p95": 29.702167
+            },
+            "afterEncodeAck": {
+              "count": 153,
+              "mean": 42.539821830065335,
+              "p95": 59.468958
+            },
+            "captureInterval": {
+              "count": 180,
+              "mean": 16.667634027777773,
+              "p95": 17.955416
+            },
+            "decrypt": {
+              "count": 153,
+              "mean": 0.037934640522875804,
+              "p95": 0.066
+            },
+            "dispatch": {
+              "count": 153,
+              "mean": 0.03145751633986927,
+              "p95": 0.051
+            },
+            "encode": {
+              "count": 153,
+              "mean": 15.843540594771241,
+              "p95": 29.484917
+            },
+            "encrypt": {
+              "count": 153,
+              "mean": 0.08999128104575162,
+              "p95": 0.267583
+            },
+            "localTransport": {
+              "count": 153,
+              "mean": 0.42502941830065355,
+              "p95": 1.834042
+            },
+            "raw": {
+              "count": 153,
+              "mean": 5.610358411764704,
+              "p95": 13.846416
+            },
+            "renderer": {
+              "count": 153,
+              "mean": 0.18697385620915027,
+              "p95": 0.441
+            },
+            "sample": {
+              "count": 153,
+              "mean": 0.03271895424836601,
+              "p95": 0.047
+            },
+            "send": {
+              "count": 152,
+              "mean": 7.752062736842106,
+              "p95": 29.484625
+            },
+            "sendQueue": {
+              "count": 153,
+              "mean": 0.07584289542483659,
+              "p95": 0.21325
+            }
+          }
+        },
+        "queueDepth": 3
+      },
+      {
+        "artificialACKDelayMS": 35,
+        "frames": 2,
+        "measurements": {
+          "counts": {
+            "ack": 116,
+            "bytes": 365340,
+            "capture": 180,
+            "encode": 116,
+            "replace": 64,
+            "send": 116
+          },
+          "durationsMS": {
+            "creditStall": 1412.339211
+          },
+          "peakOutstanding": 2,
+          "seconds": 2.999161,
+          "times": {
+            "ack": {
+              "count": 116,
+              "mean": 58.6167974051724,
+              "p95": 67.801459
+            },
+            "ackInterval": {
+              "count": 116,
+              "mean": 25.83578304310345,
+              "p95": 40.043083
+            },
+            "afterEncodeAck": {
+              "count": 116,
+              "mean": 38.78598319827588,
+              "p95": 42.207541
+            },
+            "captureInterval": {
+              "count": 180,
+              "mean": 16.662691900000006,
+              "p95": 18.405833
+            },
+            "decrypt": {
+              "count": 116,
+              "mean": 0.031189655172413774,
+              "p95": 0.056
+            },
+            "dispatch": {
+              "count": 116,
+              "mean": 0.02898275862068963,
+              "p95": 0.055
+            },
+            "encode": {
+              "count": 116,
+              "mean": 12.743743844827584,
+              "p95": 14.245917
+            },
+            "encrypt": {
+              "count": 116,
+              "mean": 0.06648312068965517,
+              "p95": 0.138041
+            },
+            "localTransport": {
+              "count": 116,
+              "mean": 0.2929479137931036,
+              "p95": 0.524709
+            },
+            "raw": {
+              "count": 116,
+              "mean": 6.998391862068964,
+              "p95": 15.342417
+            },
+            "renderer": {
+              "count": 116,
+              "mean": 0.19950862068965514,
+              "p95": 0.548
+            },
+            "sample": {
+              "count": 116,
+              "mean": 0.031017241379310338,
+              "p95": 0.041
+            },
+            "send": {
+              "count": 116,
+              "mean": 1.8752705431034478,
+              "p95": 12.849791
+            },
+            "sendQueue": {
+              "count": 116,
+              "mean": 0.04103664655172413,
+              "p95": 0.05925
+            }
+          }
+        },
+        "queueDepth": 3
+      }
+    ],
+    "schema": 1,
+    "scope": "Generated 2560x1664 NV12; production H.264, encrypted loopback and AVSampleBufferDisplayLayer. Excludes ScreenCaptureKit, AWDL and physical presentation."
+  },
+  "flowComparison": {
+    "latencyRule": "Reject a candidate if callback-to-submission-ACK p95 exceeds baseline by max(10 ms, 20%); require >=10% FPS gain. Defaults remain unchanged outside this session.",
+    "results": [
+      {
+        "artificialACKDelayMS": 0,
+        "frames": 2,
+        "measurements": {
+          "counts": {
+            "ack": 261,
+            "bytes": 842362,
+            "capture": 360,
+            "encode": 262,
+            "replace": 97,
+            "send": 261
+          },
+          "durationsMS": {},
+          "peakOutstanding": 2,
+          "seconds": 5.999931,
+          "times": {
+            "ack": {
+              "count": 261,
+              "mean": 40.606271080459734,
+              "p95": 73.624708
+            },
+            "afterEncodeAck": {
+              "count": 261,
+              "mean": 15.601355517241375,
+              "p95": 30.10725
+            },
+            "captureInterval": {
+              "count": 360,
+              "mean": 16.666781944444452,
+              "p95": 17.757791
+            },
+            "decrypt": {
+              "count": 261,
+              "mean": 0.029080459770114916,
+              "p95": 0.067
+            },
+            "dispatch": {
+              "count": 261,
+              "mean": 0.030176245210727943,
+              "p95": 0.046
+            },
+            "encode": {
+              "count": 262,
+              "mean": 20.59378658778625,
+              "p95": 30.0855
+            },
+            "encrypt": {
+              "count": 262,
+              "mean": 0.0704384847328244,
+              "p95": 0.140208
+            },
+            "localTransport": {
+              "count": 262,
+              "mean": 0.338565530534351,
+              "p95": 1.340458
+            },
+            "raw": {
+              "count": 262,
+              "mean": 4.491216118320611,
+              "p95": 15.298833
+            },
+            "renderer": {
+              "count": 261,
+              "mean": 0.1103486590038314,
+              "p95": 0.358
+            },
+            "sample": {
+              "count": 261,
+              "mean": 0.02761302681992334,
+              "p95": 0.053
+            },
+            "send": {
+              "count": 261,
+              "mean": 15.013003367816099,
+              "p95": 30.076708
+            },
+            "sendQueue": {
+              "count": 262,
+              "mean": 0.052290374045801495,
+              "p95": 0.204458
+            }
+          }
+        },
+        "queueDepth": 3
+      },
+      {
+        "artificialACKDelayMS": 0,
+        "frames": 1,
+        "measurements": {
+          "counts": {
+            "ack": 256,
+            "bytes": 823600,
+            "capture": 360,
+            "encode": 255,
+            "replace": 104,
+            "send": 256
+          },
+          "durationsMS": {
+            "creditStall": 190.212376
+          },
+          "peakOutstanding": 1,
+          "seconds": 5.999966542,
+          "times": {
+            "ack": {
+              "count": 256,
+              "mean": 26.26791015234373,
+              "p95": 44.609375
+            },
+            "afterEncodeAck": {
+              "count": 256,
+              "mean": 1.3336616171875006,
+              "p95": 3.58625
+            },
+            "captureInterval": {
+              "count": 360,
+              "mean": 16.661429974999997,
+              "p95": 17.26075
+            },
+            "decrypt": {
+              "count": 256,
+              "mean": 0.029804687499999975,
+              "p95": 0.06
+            },
+            "dispatch": {
+              "count": 256,
+              "mean": 0.02891406249999999,
+              "p95": 0.051
+            },
+            "encode": {
+              "count": 255,
+              "mean": 20.58200716862745,
+              "p95": 29.34875
+            },
+            "encrypt": {
+              "count": 256,
+              "mean": 0.07420601953124999,
+              "p95": 0.156084
+            },
+            "localTransport": {
+              "count": 256,
+              "mean": 0.24531364062500027,
+              "p95": 0.583333
+            },
+            "raw": {
+              "count": 256,
+              "mean": 4.439450203125,
+              "p95": 15.228125
+            },
+            "renderer": {
+              "count": 256,
+              "mean": 0.12725000000000003,
+              "p95": 0.39
+            },
+            "sample": {
+              "count": 256,
+              "mean": 0.029105468749999978,
+              "p95": 0.049
+            },
+            "send": {
+              "count": 256,
+              "mean": 0.42092790234375044,
+              "p95": 0.875083
+            },
+            "sendQueue": {
+              "count": 256,
+              "mean": 0.031466781250000006,
+              "p95": 0.062375
+            }
+          }
+        },
+        "queueDepth": 3
+      },
+      {
+        "artificialACKDelayMS": 0,
+        "frames": 3,
+        "measurements": {
+          "counts": {
+            "ack": 260,
+            "bytes": 833053,
+            "capture": 360,
+            "encode": 260,
+            "replace": 99,
+            "send": 259
+          },
+          "durationsMS": {},
+          "peakOutstanding": 2,
+          "seconds": 5.998165459,
+          "times": {
+            "ack": {
+              "count": 260,
+              "mean": 41.695112011538455,
+              "p95": 73.264375
+            },
+            "afterEncodeAck": {
+              "count": 260,
+              "mean": 16.39620354230769,
+              "p95": 30.29925
+            },
+            "captureInterval": {
+              "count": 360,
+              "mean": 16.662772916666658,
+              "p95": 18.039292
+            },
+            "decrypt": {
+              "count": 260,
+              "mean": 0.034599999999999985,
+              "p95": 0.067
+            },
+            "dispatch": {
+              "count": 260,
+              "mean": 0.03300769230769229,
+              "p95": 0.051
+            },
+            "encode": {
+              "count": 260,
+              "mean": 20.942259803846163,
+              "p95": 30.274083
+            },
+            "encrypt": {
+              "count": 260,
+              "mean": 0.08216204615384606,
+              "p95": 0.177667
+            },
+            "localTransport": {
+              "count": 260,
+              "mean": 0.4114663153846153,
+              "p95": 1.684958
+            },
+            "raw": {
+              "count": 261,
+              "mean": 4.52938758237548,
+              "p95": 15.7
+            },
+            "renderer": {
+              "count": 260,
+              "mean": 0.14075000000000004,
+              "p95": 0.416
+            },
+            "sample": {
+              "count": 260,
+              "mean": 0.02873076923076921,
+              "p95": 0.049
+            },
+            "send": {
+              "count": 259,
+              "mean": 15.438727463320467,
+              "p95": 30.378167
+            },
+            "sendQueue": {
+              "count": 260,
+              "mean": 0.05827403076923078,
+              "p95": 0.232625
+            }
+          }
+        },
+        "queueDepth": 3
+      },
+      {
+        "artificialACKDelayMS": 0,
+        "frames": 2,
+        "measurements": {
+          "counts": {
+            "ack": 260,
+            "bytes": 837240,
+            "capture": 360,
+            "encode": 261,
+            "replace": 98,
+            "send": 260
+          },
+          "durationsMS": {},
+          "peakOutstanding": 2,
+          "seconds": 5.999401792,
+          "times": {
+            "ack": {
+              "count": 260,
+              "mean": 41.34682578846155,
+              "p95": 73.215791
+            },
+            "afterEncodeAck": {
+              "count": 260,
+              "mean": 15.740688465384626,
+              "p95": 30.306625
+            },
+            "captureInterval": {
+              "count": 360,
+              "mean": 16.66664583333334,
+              "p95": 17.735833
+            },
+            "decrypt": {
+              "count": 260,
+              "mean": 0.03188076923076919,
+              "p95": 0.058
+            },
+            "dispatch": {
+              "count": 260,
+              "mean": 0.02838076923076923,
+              "p95": 0.052
+            },
+            "encode": {
+              "count": 261,
+              "mean": 20.829282245210727,
+              "p95": 30.232083
+            },
+            "encrypt": {
+              "count": 261,
+              "mean": 0.07182281226053648,
+              "p95": 0.138875
+            },
+            "localTransport": {
+              "count": 261,
+              "mean": 0.40587164750957866,
+              "p95": 1.989
+            },
+            "raw": {
+              "count": 262,
+              "mean": 4.890114961832061,
+              "p95": 15.710375
+            },
+            "renderer": {
+              "count": 260,
+              "mean": 0.12463076923076916,
+              "p95": 0.335
+            },
+            "sample": {
+              "count": 260,
+              "mean": 0.025711538461538428,
+              "p95": 0.045
+            },
+            "send": {
+              "count": 260,
+              "mean": 15.332122757692307,
+              "p95": 30.284958
+            },
+            "sendQueue": {
+              "count": 261,
+              "mean": 0.055479118773946345,
+              "p95": 0.216125
+            }
+          }
+        },
+        "queueDepth": 3
+      },
+      {
+        "artificialACKDelayMS": 35,
+        "frames": 2,
+        "measurements": {
+          "counts": {
+            "ack": 213,
+            "bytes": 662278,
+            "capture": 360,
+            "encode": 212,
+            "replace": 146,
+            "send": 212
+          },
+          "durationsMS": {
+            "creditStall": 2059.860741
+          },
+          "peakOutstanding": 2,
+          "seconds": 6.000026833,
+          "times": {
+            "ack": {
+              "count": 213,
+              "mean": 63.704312600938955,
+              "p95": 81.771583
+            },
+            "afterEncodeAck": {
+              "count": 213,
+              "mean": 38.43533335680752,
+              "p95": 42.876083
+            },
+            "captureInterval": {
+              "count": 360,
+              "mean": 16.666990511111116,
+              "p95": 17.297375
+            },
+            "decrypt": {
+              "count": 213,
+              "mean": 0.027455399061032816,
+              "p95": 0.046
+            },
+            "dispatch": {
+              "count": 213,
+              "mean": 0.029112676056338018,
+              "p95": 0.04
+            },
+            "encode": {
+              "count": 212,
+              "mean": 17.73301294811321,
+              "p95": 30.522708
+            },
+            "encrypt": {
+              "count": 212,
+              "mean": 0.0633093679245283,
+              "p95": 0.120416
+            },
+            "localTransport": {
+              "count": 212,
+              "mean": 0.24358152358490553,
+              "p95": 0.503917
+            },
+            "raw": {
+              "count": 213,
+              "mean": 7.702286375586854,
+              "p95": 15.369875
+            },
+            "renderer": {
+              "count": 213,
+              "mean": 0.12912206572769955,
+              "p95": 0.391
+            },
+            "sample": {
+              "count": 213,
+              "mean": 0.02844131455399059,
+              "p95": 0.044
+            },
+            "send": {
+              "count": 212,
+              "mean": 3.931039551886791,
+              "p95": 28.08975
+            },
+            "sendQueue": {
+              "count": 212,
+              "mean": 0.03795876886792454,
+              "p95": 0.068708
+            }
+          }
+        },
+        "queueDepth": 3
+      },
+      {
+        "artificialACKDelayMS": 35,
+        "frames": 1,
+        "measurements": {
+          "counts": {
+            "ack": 121,
+            "bytes": 288904,
+            "capture": 360,
+            "encode": 122,
+            "replace": 238,
+            "send": 122
+          },
+          "durationsMS": {
+            "creditStall": 4454.636957
+          },
+          "peakOutstanding": 1,
+          "seconds": 5.999913417,
+          "times": {
+            "ack": {
+              "count": 121,
+              "mean": 57.96657542148763,
+              "p95": 64.640208
+            },
+            "afterEncodeAck": {
+              "count": 121,
+              "mean": 37.515415297520654,
+              "p95": 39.620417
+            },
+            "captureInterval": {
+              "count": 360,
+              "mean": 16.66561018333334,
+              "p95": 17.6985
+            },
+            "decrypt": {
+              "count": 121,
+              "mean": 0.02404958677685948,
+              "p95": 0.048
+            },
+            "dispatch": {
+              "count": 121,
+              "mean": 0.026181818181818174,
+              "p95": 0.047
+            },
+            "encode": {
+              "count": 122,
+              "mean": 11.850721975409837,
+              "p95": 13.937917
+            },
+            "encrypt": {
+              "count": 122,
+              "mean": 0.04987915573770491,
+              "p95": 0.104292
+            },
+            "localTransport": {
+              "count": 122,
+              "mean": 0.23573729508196706,
+              "p95": 0.377041
+            },
+            "raw": {
+              "count": 121,
+              "mean": 8.673758628099167,
+              "p95": 14.865625
+            },
+            "renderer": {
+              "count": 121,
+              "mean": 0.08750413223140496,
+              "p95": 0.254
+            },
+            "sample": {
+              "count": 121,
+              "mean": 0.04809090909090906,
+              "p95": 0.04
+            },
+            "send": {
+              "count": 122,
+              "mean": 0.34682072950819687,
+              "p95": 0.977084
+            },
+            "sendQueue": {
+              "count": 122,
+              "mean": 0.020875672131147546,
+              "p95": 0.045917
+            }
+          }
+        },
+        "queueDepth": 3
+      },
+      {
+        "artificialACKDelayMS": 35,
+        "frames": 3,
+        "measurements": {
+          "counts": {
+            "ack": 260,
+            "bytes": 836872,
+            "capture": 360,
+            "encode": 260,
+            "replace": 98,
+            "send": 259
+          },
+          "durationsMS": {
+            "creditStall": 168.325122
+          },
+          "peakOutstanding": 3,
+          "seconds": 6.000130041,
+          "times": {
+            "ack": {
+              "count": 260,
+              "mean": 73.29593222692307,
+              "p95": 101.96425
+            },
+            "afterEncodeAck": {
+              "count": 260,
+              "mean": 47.79136906153849,
+              "p95": 61.027333
+            },
+            "captureInterval": {
+              "count": 360,
+              "mean": 16.666678588888896,
+              "p95": 17.636667
+            },
+            "decrypt": {
+              "count": 260,
+              "mean": 0.02084230769230767,
+              "p95": 0.043
+            },
+            "dispatch": {
+              "count": 260,
+              "mean": 0.025392307692307665,
+              "p95": 0.042
+            },
+            "encode": {
+              "count": 260,
+              "mean": 20.524436546153844,
+              "p95": 30.583834
+            },
+            "encrypt": {
+              "count": 260,
+              "mean": 0.04482211923076924,
+              "p95": 0.085666
+            },
+            "localTransport": {
+              "count": 260,
+              "mean": 0.17234759615384618,
+              "p95": 0.339
+            },
+            "raw": {
+              "count": 261,
+              "mean": 5.213284153256704,
+              "p95": 15.187208
+            },
+            "renderer": {
+              "count": 260,
+              "mean": 0.07622692307692304,
+              "p95": 0.172
+            },
+            "sample": {
+              "count": 260,
+              "mean": 0.019484615384615354,
+              "p95": 0.041
+            },
+            "send": {
+              "count": 259,
+              "mean": 15.781660212355215,
+              "p95": 30.642292
+            },
+            "sendQueue": {
+              "count": 260,
+              "mean": 0.028872603846153866,
+              "p95": 0.053
+            }
+          }
+        },
+        "queueDepth": 3
+      },
+      {
+        "artificialACKDelayMS": 35,
+        "frames": 2,
+        "measurements": {
+          "counts": {
+            "ack": 215,
+            "bytes": 676962,
+            "capture": 360,
+            "encode": 214,
+            "replace": 144,
+            "send": 214
+          },
+          "durationsMS": {
+            "creditStall": 1880.146915
+          },
+          "peakOutstanding": 2,
+          "seconds": 6.00073375,
+          "times": {
+            "ack": {
+              "count": 215,
+              "mean": 63.313138,
+              "p95": 81.979333
+            },
+            "afterEncodeAck": {
+              "count": 215,
+              "mean": 37.48696838604653,
+              "p95": 40.631833
+            },
+            "captureInterval": {
+              "count": 360,
+              "mean": 16.667135880555563,
+              "p95": 17.616
+            },
+            "decrypt": {
+              "count": 215,
+              "mean": 0.020465116279069752,
+              "p95": 0.048
+            },
+            "dispatch": {
+              "count": 215,
+              "mean": 0.022511627906976736,
+              "p95": 0.043
+            },
+            "encode": {
+              "count": 214,
+              "mean": 18.054606546728976,
+              "p95": 30.984666
+            },
+            "encrypt": {
+              "count": 214,
+              "mean": 0.04478502336448597,
+              "p95": 0.0955
+            },
+            "localTransport": {
+              "count": 214,
+              "mean": 0.15053229439252336,
+              "p95": 0.374917
+            },
+            "raw": {
+              "count": 215,
+              "mean": 7.8962364279069766,
+              "p95": 15.619541
+            },
+            "renderer": {
+              "count": 215,
+              "mean": 0.07565581395348835,
+              "p95": 0.192
+            },
+            "sample": {
+              "count": 215,
+              "mean": 0.019483720930232533,
+              "p95": 0.037
+            },
+            "send": {
+              "count": 214,
+              "mean": 1.9273841495327104,
+              "p95": 12.502375
+            },
+            "sendQueue": {
+              "count": 214,
+              "mean": 0.024744761682242992,
+              "p95": 0.052
+            }
+          }
+        },
+        "queueDepth": 3
+      },
+      {
+        "artificialACKDelayMS": 75,
+        "frames": 2,
+        "measurements": {
+          "counts": {
+            "ack": 133,
+            "bytes": 365883,
+            "capture": 360,
+            "encode": 132,
+            "replace": 228,
+            "send": 132
+          },
+          "durationsMS": {
+            "creditStall": 4276.781959
+          },
+          "peakOutstanding": 2,
+          "seconds": 5.999869666,
+          "times": {
+            "ack": {
+              "count": 133,
+              "mean": 97.97470205263157,
+              "p95": 107.515458
+            },
+            "afterEncodeAck": {
+              "count": 133,
+              "mean": 78.62885027819551,
+              "p95": 82.353083
+            },
+            "captureInterval": {
+              "count": 360,
+              "mean": 16.664999536111136,
+              "p95": 18.217167
+            },
+            "decrypt": {
+              "count": 133,
+              "mean": 0.021571428571428547,
+              "p95": 0.04
+            },
+            "dispatch": {
+              "count": 133,
+              "mean": 0.02205263157894734,
+              "p95": 0.039
+            },
+            "encode": {
+              "count": 132,
+              "mean": 11.797891060606064,
+              "p95": 14.002041
+            },
+            "encrypt": {
+              "count": 132,
+              "mean": 0.05342926515151513,
+              "p95": 0.123458
+            },
+            "localTransport": {
+              "count": 132,
+              "mean": 0.19051103787878798,
+              "p95": 0.528041
+            },
+            "raw": {
+              "count": 133,
+              "mean": 7.5824950150375905,
+              "p95": 15.809042
+            },
+            "renderer": {
+              "count": 133,
+              "mean": 0.10177443609022563,
+              "p95": 0.235
+            },
+            "sample": {
+              "count": 133,
+              "mean": 0.021180451127819522,
+              "p95": 0.045
+            },
+            "send": {
+              "count": 132,
+              "mean": 0.6717926060606061,
+              "p95": 1.350708
+            },
+            "sendQueue": {
+              "count": 132,
+              "mean": 0.02918969696969696,
+              "p95": 0.115041
+            }
+          }
+        },
+        "queueDepth": 3
+      },
+      {
+        "artificialACKDelayMS": 75,
+        "frames": 1,
+        "measurements": {
+          "counts": {
+            "ack": 66,
+            "bytes": 191034,
+            "capture": 360,
+            "encode": 66,
+            "replace": 294,
+            "send": 66
+          },
+          "durationsMS": {
+            "creditStall": 5140.814288
+          },
+          "peakOutstanding": 1,
+          "seconds": 6.004470208,
+          "times": {
+            "ack": {
+              "count": 66,
+              "mean": 99.5901269393939,
+              "p95": 109.7145
+            },
+            "afterEncodeAck": {
+              "count": 66,
+              "mean": 79.05901631818182,
+              "p95": 81.702166
+            },
+            "captureInterval": {
+              "count": 360,
+              "mean": 16.669210647222215,
+              "p95": 20.225125
+            },
+            "decrypt": {
+              "count": 66,
+              "mean": 0.02527272727272726,
+              "p95": 0.053
+            },
+            "dispatch": {
+              "count": 66,
+              "mean": 0.031939393939393934,
+              "p95": 0.043
+            },
+            "encode": {
+              "count": 66,
+              "mean": 12.249143939393939,
+              "p95": 14.179541
+            },
+            "encrypt": {
+              "count": 66,
+              "mean": 0.06819887878787878,
+              "p95": 0.137375
+            },
+            "localTransport": {
+              "count": 66,
+              "mean": 0.2352676818181818,
+              "p95": 0.611334
+            },
+            "raw": {
+              "count": 66,
+              "mean": 8.176459636363637,
+              "p95": 15.828208
+            },
+            "renderer": {
+              "count": 66,
+              "mean": 0.12246969696969695,
+              "p95": 0.363
+            },
+            "sample": {
+              "count": 66,
+              "mean": 0.0717878787878788,
+              "p95": 0.048
+            },
+            "send": {
+              "count": 66,
+              "mean": 0.3765466666666667,
+              "p95": 0.849209
+            },
+            "sendQueue": {
+              "count": 66,
+              "mean": 0.03147286363636363,
+              "p95": 0.08975
+            }
+          }
+        },
+        "queueDepth": 3
+      },
+      {
+        "artificialACKDelayMS": 75,
+        "frames": 3,
+        "measurements": {
+          "counts": {
+            "ack": 189,
+            "bytes": 553654,
+            "capture": 360,
+            "encode": 188,
+            "replace": 171,
+            "send": 187
+          },
+          "durationsMS": {
+            "creditStall": 2777.803919
+          },
+          "peakOutstanding": 3,
+          "seconds": 5.99897125,
+          "times": {
+            "ack": {
+              "count": 189,
+              "mean": 101.15297292592592,
+              "p95": 122.477333
+            },
+            "afterEncodeAck": {
+              "count": 189,
+              "mean": 79.11838510052911,
+              "p95": 82.908667
+            },
+            "captureInterval": {
+              "count": 360,
+              "mean": 16.667623497222216,
+              "p95": 17.718625
+            },
+            "decrypt": {
+              "count": 189,
+              "mean": 0.022968253968253947,
+              "p95": 0.044
+            },
+            "dispatch": {
+              "count": 189,
+              "mean": 0.02500529100529097,
+              "p95": 0.043
+            },
+            "encode": {
+              "count": 188,
+              "mean": 15.80225868085107,
+              "p95": 31.294709
+            },
+            "encrypt": {
+              "count": 188,
+              "mean": 0.04994502127659578,
+              "p95": 0.107916
+            },
+            "localTransport": {
+              "count": 188,
+              "mean": 0.1905046755319149,
+              "p95": 0.490709
+            },
+            "raw": {
+              "count": 189,
+              "mean": 6.558148798941799,
+              "p95": 14.925875
+            },
+            "renderer": {
+              "count": 189,
+              "mean": 0.09699470899470905,
+              "p95": 0.345
+            },
+            "sample": {
+              "count": 189,
+              "mean": 0.022301587301587267,
+              "p95": 0.041
+            },
+            "send": {
+              "count": 187,
+              "mean": 3.2082833903743313,
+              "p95": 27.555041
+            },
+            "sendQueue": {
+              "count": 188,
+              "mean": 0.02732379787234043,
+              "p95": 0.052875
+            }
+          }
+        },
+        "queueDepth": 3
+      },
+      {
+        "artificialACKDelayMS": 75,
+        "frames": 2,
+        "measurements": {
+          "counts": {
+            "ack": 132,
+            "bytes": 378018,
+            "capture": 360,
+            "encode": 131,
+            "replace": 229,
+            "send": 131
+          },
+          "durationsMS": {
+            "creditStall": 4273.836081
+          },
+          "peakOutstanding": 2,
+          "seconds": 5.999923959,
+          "times": {
+            "ack": {
+              "count": 132,
+              "mean": 98.62935006060609,
+              "p95": 109.223125
+            },
+            "afterEncodeAck": {
+              "count": 132,
+              "mean": 79.11084275000003,
+              "p95": 82.986792
+            },
+            "captureInterval": {
+              "count": 360,
+              "mean": 16.666635533333327,
+              "p95": 17.835167
+            },
+            "decrypt": {
+              "count": 132,
+              "mean": 0.02346212121212119,
+              "p95": 0.051
+            },
+            "dispatch": {
+              "count": 132,
+              "mean": 0.02462878787878786,
+              "p95": 0.047
+            },
+            "encode": {
+              "count": 131,
+              "mean": 11.99626053435115,
+              "p95": 13.743042
+            },
+            "encrypt": {
+              "count": 131,
+              "mean": 0.050267511450381705,
+              "p95": 0.121625
+            },
+            "localTransport": {
+              "count": 131,
+              "mean": 0.20137884732824424,
+              "p95": 0.486083
+            },
+            "raw": {
+              "count": 132,
+              "mean": 7.7339535757575755,
+              "p95": 15.862
+            },
+            "renderer": {
+              "count": 132,
+              "mean": 0.10450757575757576,
+              "p95": 0.33
+            },
+            "sample": {
+              "count": 132,
+              "mean": 0.024333333333333325,
+              "p95": 0.044
+            },
+            "send": {
+              "count": 131,
+              "mean": 1.2965480381679386,
+              "p95": 11.311917
+            },
+            "sendQueue": {
+              "count": 131,
+              "mean": 0.024769038167938934,
+              "p95": 0.045125
+            }
+          }
+        },
+        "queueDepth": 3
+      }
+    ],
+    "schema": 1,
+    "scope": "Generated 2560x1664 NV12; production H.264, encrypted loopback and AVSampleBufferDisplayLayer. Excludes ScreenCaptureKit, AWDL and physical presentation."
+  },
+  "memoryCheck": {
+    "result": "passed",
+    "scope": "Four generated encrypted flow cases at 35 ms artificial ACK delay; excludes capture, AWDL and physical presentation. Sanitizer timings are not used as performance evidence.",
+    "tool": "AddressSanitizer"
+  },
+  "physicalMacToMac": {
+    "afterFPS": null,
+    "afterP95MS": null,
+    "beforeFPS": "user-reported approximately 20",
+    "beforeP95MS": null,
+    "status": "awaiting both-Mac test"
+  },
+  "productionCaptureQueueDepth": 3,
+  "retinaPixels": [
+    2560,
+    1664
+  ],
+  "schema": 1,
+  "scope": "Local generated benchmarks only. No real Mac-to-Mac after measurements yet.",
+  "validation": [
+    "Universal arm64/x86_64 build and strict codesign passed",
+    "Self-test, actual encrypted pairing/session-only reconnect/Forget, fresh-process isolation, Bonjour and native panel checks passed",
+    "Generated encrypted Retina delayed-ACK production path passed",
+    "Final build four-case cadence/transport p95 recording passed; no encoded predictive frame lost",
+    "No SecItem or SecKeychain imports"
+  ]
+}

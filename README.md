@@ -1,5 +1,8 @@
 <p align="center"><img src="Resources/Branding/MacPair%20Dual%20Monitor%20Logo.png" width="560" alt="MacPair"></p>
 
+> **Smoothness test branch: 0.1.11 RC1.** [Test package](https://github.com/catstats/MacPair/releases/tag/v0.1.11-rc.1) · [Two-Mac test guide](SMOOTHNESS-TEST.md). The stable release is still 0.1.10. Real two-Mac after measurements are pending.
+
+
 # MacPair
 
 **Two Macs. More room.**

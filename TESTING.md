@@ -1,5 +1,26 @@
 # MacPair test guide
 
+## 0.1.11 RC1 — measured frame-window experiment (2026-11-17)
+
+Stable production defaults remain two in-flight frames and ScreenCaptureKit queueDepth 3. New peers optionally negotiate bounded 1/2/3-frame diagnostics; old feedback peers keep their 20-byte ACKs and 60 fps target, and older peers retain 30 fps fallback. Retina pixel dimensions, bitrate and codec are unchanged.
+
+One click compares 2/1/3/3/1/2 on the existing authenticated connection, then independently verifies a candidate. Complete per-trial nearest-rank p95 recordings are independent of UI counter resets. Selection is session-only, with latency/cadence/drop guards and automatic rollback; a one-frame option may also qualify by substantially lowering p95 at equivalent throughput once the baseline is >=30 FPS. See SMOOTHNESS-TEST.md for the precise policy and interpretation of every stage.
+
+Local evidence in Tests/Performance-0.1.11-rc.1.json is **generated encrypted loopback, not real AWDL or physical presentation**:
+
+| Artificial ACK delay | 1 frame FPS / ACK p95 ms | 2 frames FPS / ACK p95 ms | 3 frames FPS / ACK p95 ms |
+| --- | --- | --- | --- |
+| 0 ms | 42.7 / 44.6 | 43.4 / 73.6 | 43.3 / 73.3 |
+| 35 ms | 20.2 / 64.6 | 35.7 / 82.0 | 43.3 / 102.0 |
+| 75 ms | 11.0 / 109.7 | 22.1 / 109.2 | 31.5 / 122.5 |
+
+Two-frame FPS averages the bracketed baseline runs; its p95 is the worse run, not an average of percentiles. All encoded frames drained in order. The 35 ms three-frame case raises p95 past the policy limit and must not be promoted. Zero-delay three frames offer no throughput gain. At 75 ms, credit-only stalls occupy ~71% for two frames and ~46% for three, confirming that an ACK window can cap throughput under sufficiently long return delay. This does not establish the user's real bottleneck.
+
+The released 0.1.10 generated 2560×1664 NV12 codec baseline measured encode mean/p95 12.83/20.01 ms and decode 2.15/3.02 ms. It excludes screen capture, transport and presentation. AddressSanitizer passed four generated 35 ms ACK cases after making async phase iteration explicitly bounded; sanitizer timings are not used as performance evidence.
+
+The local ScreenCaptureKit test was **not run** because CGPreflightScreenCaptureAccess was false; it attempted no capture. There is no evidence to justify increasing queueDepth, so it stays 3. Physical testing must still run on both Macs using this build, same Retina preset and normal Screen Recording permission. The approximately 20 FPS before value is user-reported; real after FPS and before/after p95 remain unmeasured. The test report records WindowServer-to-callback, raw admission, encode, wire scheduling/encryption/local-send, receiver decrypt/queue/sample/renderer wait, ACK cadence and capture-to-submission-ACK. AVFoundation rendering counters are optional on macOS 14.4+. No unsynchronized one-way clock subtraction or invented decode/optical p95 is reported.
+
+
 ## v0.1.10 — session memory instead of Keychain
 
 The current release removes all Keychain APIs from the pairing store and uses a fresh public identity for every app process. Reconnect without a code lasts only while both apps remain open. Old Keychain records are neither read nor deleted. The encrypted protocol and video implementation are unchanged.

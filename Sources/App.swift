@@ -29,7 +29,7 @@ struct MainView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(alignment: .firstTextBaseline, spacing: 9) {
                             Text("MacPair").font(.title2.bold())
-                            Text("v0.1.10").font(.caption).foregroundStyle(.secondary)
+                            Text("v0.1.11 RC1").font(.caption).foregroundStyle(.secondary)
                         }
                         Text(L("Your nearby Mac. Your second display.")).font(.caption).foregroundStyle(.secondary)
                     }
@@ -86,6 +86,22 @@ struct MainView: View {
                                     .disabled(model.occupied || model.selectedPeer?.isDirect != true)
                                 Text(L("Checks the link without sharing a screen.")).font(.caption).foregroundStyle(.secondary)
                             }.padding(.vertical, 4)
+                        }
+                        if model.canCompareSmoothness || model.smoothnessRunning {
+                            HStack {
+                                Button(L(model.smoothnessRunning ? "Cancel comparison" : "Compare 1 / 2 / 3 frames")) {
+                                    if model.smoothnessRunning { model.cancelSmoothnessComparison() } else { model.compareSmoothness() }
+                                }
+                                Text(L("About 90 seconds · moving test pattern · resolution unchanged"))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }.padding(.vertical, 4)
+                        } else if model.role == .host && model.connected && !model.diagnostic {
+                            Text(L("Update both Macs to enable the smoothness comparison.")).font(.caption).foregroundStyle(.secondary)
+                        }
+                        if !model.smoothnessStatus.isEmpty { Text(model.smoothnessStatus).font(.caption).textSelection(.enabled) }
+                        if !model.smoothnessResults.isEmpty { Text(model.smoothnessResults).font(.caption.monospaced()).textSelection(.enabled) }
+                        if model.smoothnessReportURL != nil {
+                            Button(L("Show smoothness report")) { model.revealSmoothnessReport() }
                         }
                         ForEach(Array(model.events.enumerated()), id: \.offset) { _, text in
                             Text(text.localized).font(.caption.monospaced()).textSelection(.enabled)

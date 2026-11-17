@@ -201,7 +201,7 @@ final class H264Samples {
 // Encoder/window state belongs to queue; raw admission/stopping uses lock.
 // Callbacks are configured before capture starts and remain immutable until stop.
 final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
-    private struct Capture { let image: CVPixelBuffer; let at: UInt64 }
+    private struct Capture { let image: CVPixelBuffer; let at: UInt64; let sourceAt: UInt64? }
     private struct Encoding { let id: UInt64; let started: UInt64 }
     private let link: PeerLink
     private let encoder: H264Encoder
@@ -214,6 +214,10 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     private var encoding: Encoding?
     private var window: VideoFrameWindow
     private let feedback: Bool
+    private let maximumFrames: Int
+    private var captureDepth = 3
+    private var previousCapture: UInt64?
+    private var previousAcknowledgement: UInt64?
     private let metrics = VideoMetrics()
     private var watchdog: DispatchSourceTimer?
     private var stream: SCStream?
@@ -224,9 +228,12 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     var onError: ((LocalizedMessage) -> Void)?
     var onSent: (() -> Void)?
 
-    init(link: PeerLink, width: Int, height: Int, fps: Int, feedback: Bool = false) throws {
-        self.link = link; self.feedback = feedback
-        self.window = VideoFrameWindow(limit: feedback ? 2 : 1)
+    init(link: PeerLink, width: Int, height: Int, fps: Int, feedback: Bool = false, maximumFrames: Int = 2, initialFrames: Int = 2, captureQueueDepth: Int = 3) throws {
+        guard (1...3).contains(maximumFrames), (1...maximumFrames).contains(initialFrames), (3...8).contains(captureQueueDepth) else {
+            throw PairError.message("Unsupported video feedback settings")
+        }
+        self.link = link; self.feedback = feedback; self.maximumFrames = maximumFrames; self.captureDepth = captureQueueDepth
+        self.window = VideoFrameWindow(limit: feedback ? initialFrames : 1)
         expectedWidth = width; expectedHeight = height
         encoder = try H264Encoder(width: width, height: height, fps: fps)
         super.init()
@@ -240,12 +247,23 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     }
     func snapshot(reset: Bool = true) -> VideoMetricsSnapshot { metrics.snapshot(reset: reset) }
 
-    func start(displayID: CGDirectDisplayID, width: Int, height: Int, fps: Int) async throws {
+    func setFrameLimit(_ limit: Int) async throws {
+        guard feedback, (1...maximumFrames).contains(limit) else { throw PairError.message("Unsupported video feedback settings") }
+        await withCheckedContinuation { continuation in
+            queue.async { self.window.setLimit(limit); self.schedulePump(); continuation.resume() }
+        }
+    }
+    func beginRecording() { metrics.beginRecording() }
+    func finishRecording() -> VideoTrialMeasurements { metrics.finishRecording() }
+
+    func start(displayID: CGDirectDisplayID, width: Int, height: Int, fps: Int, windowID: CGWindowID? = nil) async throws {
         var target: SCDisplay?
+        var targetWindow: SCWindow?
         for _ in 0..<30 {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
             target = content.displays.first { $0.displayID == displayID }
-            if target != nil { break }
+            if let windowID { targetWindow = content.windows.first { $0.windowID == windowID } }
+            if target != nil, windowID == nil || targetWindow != nil { break }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
         try Task.checkCancellation()
@@ -255,11 +273,15 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         let configuration = SCStreamConfiguration()
         configuration.width = width; configuration.height = height
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: Int32(fps))
-        configuration.queueDepth = 3
+        configuration.queueDepth = captureDepth
         configuration.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
         configuration.colorMatrix = kCVImageBufferYCbCrMatrix_ITU_R_709_2
         configuration.showsCursor = true; configuration.capturesAudio = false
-        let filter = SCContentFilter(display: target, excludingApplications: [], exceptingWindows: [])
+        let filter: SCContentFilter
+        if let windowID {
+            guard let targetWindow, targetWindow.windowID == windowID else { throw PairError.message("Generated capture window was not found") }
+            filter = SCContentFilter(desktopIndependentWindow: targetWindow)
+        } else { filter = SCContentFilter(display: target, excludingApplications: [], exceptingWindows: []) }
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: captureQueue)
         self.stream = stream
@@ -273,12 +295,13 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
               let rawStatus = attachments.first?[.status] as? Int,
               SCFrameStatus(rawValue: rawStatus) == .complete,
               let image = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        submit(image)
+        let ticks = attachments.first?[.displayTime] as? UInt64
+        submit(image, sourceAt: ticks.map { VideoClock.nanoseconds(ticks: $0) })
     }
 
     /// The production capture callback and generated-frame tests share admission.
     /// Only this one latest raw buffer may wait; encoded frames stay ordered.
-    func submit(_ image: CVPixelBuffer) {
+    func submit(_ image: CVPixelBuffer, sourceAt: UInt64? = nil) {
         guard CVPixelBufferGetWidth(image) == expectedWidth, CVPixelBufferGetHeight(image) == expectedHeight else {
             onError?("Screen capture returned unexpected pixel dimensions"); return
         }
@@ -287,7 +310,11 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         lock.lock()
         guard !stopped else { lock.unlock(); return }
         let replaced = latest != nil
-        latest = Capture(image: image, at: at)
+        let validSource = sourceAt.flatMap { $0 <= at && at - $0 < 5_000_000_000 ? $0 : nil }
+        latest = Capture(image: image, at: at, sourceAt: validSource)
+        if let previousCapture { metrics.timing("captureInterval", ns: at - previousCapture) }
+        previousCapture = at
+        if let validSource { metrics.timing("captureAge", ns: at - validSource) }
         lock.unlock()
         if replaced { metrics.event("replace") }
         schedulePump()
@@ -302,10 +329,15 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     }
     private func pump() {
         lock.lock(); pumpScheduled = false
-        guard !stopped, encoding == nil, window.available, let capture = latest else { lock.unlock(); return }
+        guard !stopped, encoding == nil, let capture = latest else { lock.unlock(); return }
+        guard window.available else {
+            metrics.setCreditBlocked(true)
+            lock.unlock(); return
+        }
+        metrics.setCreditBlocked(false)
         latest = nil
         lock.unlock()
-        guard let id = window.reserve(capturedAt: capture.at) else { return }
+        guard let id = window.reserve(capturedAt: capture.at, sourceAt: capture.sourceAt) else { return }
         let now = VideoClock.now
         metrics.depth(window.count); metrics.timing("raw", ns: now - capture.at)
         encoding = Encoding(id: id, started: now)
@@ -328,10 +360,15 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         let now = VideoClock.now
         do { try window.encoded(current.id, at: now) }
         catch { onError?(error.appMessage); return }
+        metrics.event("bytes", count: video.count)
         metrics.event("encode"); metrics.timing("encode", ns: now - current.started)
         if let format { link.send(.format, format) }
         let payload = feedback ? VideoFrame(id: current.id, bytes: video).data : video
-        link.send(feedback ? .videoFrame : .video, payload) { [weak self] ok in
+        link.send(feedback ? .videoFrame : .video, payload, timing: { [weak self] queued, encrypt, local in
+            self?.metrics.timing("sendQueue", ns: queued)
+            self?.metrics.timing("encrypt", ns: encrypt)
+            self?.metrics.timing("localTransport", ns: local)
+        }) { [weak self] ok in
             guard let self else { return }
             self.queue.async {
                 guard !self.lock.withLock({ self.stopped }) else { return }
@@ -353,10 +390,17 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         queue.async { [weak self] in
             guard let self, self.feedback, !self.lock.withLock({ self.stopped }) else { return }
             do {
+                guard data.count == (self.maximumFrames == 3 ? 24 : 20) else { throw PairError.message("Invalid video acknowledgement") }
                 let acknowledgement = try VideoAcknowledgement(data)
                 let entry = try self.window.retire(acknowledgement.id, ordered: true)
+                let acknowledgedAt = VideoClock.now
+                if let previous = self.previousAcknowledgement { self.metrics.timing("ackInterval", ns: acknowledgedAt - previous) }
+                self.previousAcknowledgement = acknowledgedAt
                 self.metrics.event("ack")
                 self.metrics.timing("ack", ns: VideoClock.now - entry.capturedAt)
+                if let sourceAt = entry.sourceAt { self.metrics.timing("sourceAck", ns: VideoClock.now - sourceAt) }
+                if let encodedAt = entry.encodedAt { self.metrics.timing("afterEncodeAck", ns: VideoClock.now - encodedAt) }
+                if let decrypt = acknowledgement.decryptUS { self.metrics.timing("decrypt", ns: UInt64(decrypt) * 1_000) }
                 self.metrics.timing("dispatch", ns: UInt64(acknowledgement.dispatchUS) * 1_000)
                 self.metrics.timing("sample", ns: UInt64(acknowledgement.sampleUS) * 1_000)
                 self.metrics.timing("renderer", ns: UInt64(acknowledgement.rendererWaitUS) * 1_000)

@@ -156,11 +156,20 @@ final class PeerLink {
     func setMediaHandler(_ handler: ((Packet) -> Bool)?) {
         queue.async { [weak self] in self?.mediaHandler = handler }
     }
-    func send(_ kind: PacketKind, _ body: Data = Data(), completion: ((Bool) -> Void)? = nil) {
+    func send(_ kind: PacketKind, _ body: Data = Data(), timing: ((UInt64, UInt64, UInt64) -> Void)? = nil, completion: ((Bool) -> Void)? = nil) {
         guard body.count + PacketCipher.overhead + 1 <= Wire.maximumPacket else { completion?(false); return }
+        let requestedAt = VideoClock.now
         queue.async { [weak self] in
             guard let self, !self.isClosed, self.isReady, let cipher = self.cipher else { completion?(false); return }
-            do { self.sendRaw(.sealed, try cipher.seal(kind, body), completion: completion) }
+            do {
+                let started = VideoClock.now
+                let bytes = try cipher.seal(kind, body)
+                let encrypted = VideoClock.now
+                self.sendRaw(.sealed, bytes) { ok in
+                    if ok { timing?(started - requestedAt, encrypted - started, VideoClock.now - encrypted) }
+                    completion?(ok)
+                }
+            }
             catch { completion?(false); self.finish(error.appMessage) }
         }
     }
@@ -250,7 +259,9 @@ final class PeerLink {
                         guard incoming.kind == .sealed, let cipher = self.cipher else {
                             throw PairError.message("Unencrypted packet rejected")
                         }
-                        let packet = try cipher.open(incoming.body)
+                        let decryptStarted = VideoClock.now
+                        let opened = try cipher.open(incoming.body)
+                        let packet = Packet(kind: opened.kind, body: opened.body, decryptNS: VideoClock.now - decryptStarted)
                         if packet.kind == .ping {
                             guard packet.body.count == 8 else { throw PairError.message("Invalid heartbeat packet") }
                             self.send(.pong, packet.body)

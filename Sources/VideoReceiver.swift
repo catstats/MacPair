@@ -2,7 +2,7 @@
 import Foundation
 import AVFoundation
 
-/// Parses compressed samples off the UI thread. At most two negotiated frames
+/// Parses compressed samples off the UI thread. At most the negotiated number of frames
 /// may be waiting/being submitted. Never drops an encoded P-frame.
 // Parsing is queue-confined, presentation is MainActor-confined, and stopping
 // and metric access are locked. Configure callbacks before installing the handler.
@@ -14,6 +14,7 @@ final class VideoReceiver: @unchecked Sendable {
         let builtAt: UInt64
         let dispatchUS: UInt32
         let sampleUS: UInt32
+        let decryptUS: UInt32
     }
     private let queue = DispatchQueue(label: "MacPair.video-receive", qos: .userInteractive)
     private let lock = NSLock()
@@ -21,6 +22,7 @@ final class VideoReceiver: @unchecked Sendable {
     private let samples = H264Samples()
     private let width: Int
     private let height: Int
+    private let maximumFrames: Int
     private var expectedID: UInt64 = 1
     private var pending = 0
     private let metrics = VideoMetrics()
@@ -33,8 +35,8 @@ final class VideoReceiver: @unchecked Sendable {
     var onSubmitted: (() -> Void)?
 
     @MainActor
-    init(layer: AVSampleBufferDisplayLayer, width: Int, height: Int) {
-        self.layer = layer; self.width = width; self.height = height
+    init(layer: AVSampleBufferDisplayLayer, width: Int, height: Int, maximumFrames: Int = 2) {
+        self.layer = layer; self.width = width; self.height = height; self.maximumFrames = maximumFrames
     }
     func snapshot(reset: Bool = true) -> VideoMetricsSnapshot { metrics.snapshot(reset: reset) }
     func accept(_ packet: Packet) {
@@ -48,7 +50,7 @@ final class VideoReceiver: @unchecked Sendable {
                         self.onDimensions?(self.width, self.height)
                     }
                 } else {
-                    guard packet.kind == .videoFrame, self.pending < 2 else {
+                    guard packet.kind == .videoFrame, self.pending < self.maximumFrames else {
                         throw PairError.message("Video receiver exceeded the negotiated frame window")
                     }
                     let start = VideoClock.now
@@ -62,7 +64,7 @@ final class VideoReceiver: @unchecked Sendable {
                     self.pending += 1; self.metrics.depth(self.pending)
                     let delivery = Delivery(id: frame.id, sample: sample, receivedAt: packet.receivedAt,
                         builtAt: built, dispatchUS: VideoClock.microseconds(start - packet.receivedAt),
-                        sampleUS: VideoClock.microseconds(built - start))
+                        sampleUS: VideoClock.microseconds(built - start), decryptUS: VideoClock.microseconds(packet.decryptNS))
                     DispatchQueue.main.async { [weak self] in
                         guard let self, !self.lock.withLock({ self.stopped }) else { return }
                         self.deliveries.append(delivery)
@@ -92,7 +94,8 @@ final class VideoReceiver: @unchecked Sendable {
             }
             onSubmitted?()
             onAcknowledgement?(VideoAcknowledgement(id: frame.id, dispatchUS: frame.dispatchUS,
-                sampleUS: frame.sampleUS, rendererWaitUS: VideoClock.microseconds(now - frame.builtAt)).data)
+                sampleUS: frame.sampleUS, rendererWaitUS: VideoClock.microseconds(now - frame.builtAt),
+                decryptUS: maximumFrames == 3 ? frame.decryptUS : nil).data)
         }
         if let first = deliveries.first {
             if VideoClock.now - first.receivedAt > 2_000_000_000 {
@@ -105,6 +108,19 @@ final class VideoReceiver: @unchecked Sendable {
                 }
             }
         }
+    }
+    @MainActor
+    func loadRendererStatistics(_ completion: @escaping (VideoRendererStatistics?) -> Void) {
+        guard !lock.withLock({ stopped }) else { completion(nil); return }
+        if #available(macOS 14.4, *) {
+            layer.sampleBufferRenderer.loadVideoPerformanceMetrics { value in
+                guard let value else { completion(nil); return }
+                let stats = VideoRendererStatistics(at: VideoClock.now, total: value.totalNumberOfFrames,
+                    dropped: value.numberOfDroppedFrames, corrupted: value.numberOfCorruptedFrames,
+                    accumulatedDelayMS: value.totalAccumulatedFrameDelay * 1000)
+                do { try stats.validate(); completion(stats) } catch { completion(nil) }
+            }
+        } else { completion(nil) }
     }
     private func fail(_ reason: LocalizedMessage) {
         let first = lock.withLock { () -> Bool in
