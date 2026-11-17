@@ -1,5 +1,14 @@
 # MacPair test guide
 
+## 0.1.11 RC2 — real diagnosis and capture profiles (2026-11-17)
+
+The real RC1 AWDL report at **2940 × 1846** measured two-frame trials 12.7 / 14.8 ACK FPS and verification 15.8 FPS. Configuration stayed at two frames; this is variation, not a gain. Credit-only stalls were negligible. Baseline p95: encode 42.77 ms, capture interval 128.26 ms, ACK 76.08 ms; receiver renderer-submission wait ~0.15 ms. WindowServer-to-ACK timestamps covered only part of the ACK population, so their p95 must not be treated as a full-population tail.
+
+Follow-up generated NV12 codec probes at the same resolution found no benefit from changing RTVC selection to explicitly enumerated AVE hardware: encode p95 18.31 vs 19.89 ms. Increasing encoder concurrency from 1 to 2 raised unpaced throughput 59.0→71.1 FPS but encode p95 19.23→32.56 ms; three slots raised p95 to 50.72 ms. These changes were rejected. The probes exclude capture, AWDL and presentation, and differ in content from the real test. See Tests/Performance-0.1.11-rc.2.json; reproduce the concurrency probe with `xcrun swift Tests/Probes/EncoderConcurrency.swift` while no other performance test runs.
+
+RC2 adds scoped streaming activity protection with cleanup and same-connection controls for RC1-equivalent activity-off/queue-3, protected activity/queue-3, and protected activity/queue-5. Frame window remains two, encoder concurrency remains one, Retina dimensions/bitrate/codec are unchanged. Queue 5 is never promoted without repeatable throughput gain, capture/ACK/cadence p95 guards, reliable timestamps and independent verification. RC1 receivers are compatible; update the host only. The test source now uses cached compositor animations to reduce main-thread painting interference. Its presentation rate remains unreported; use within-run controls, not cross-version fixture FPS, for before/after claims. Physical RC2 results remain pending.
+
+
 ## 0.1.11 RC1 — measured frame-window experiment (2026-11-17)
 
 Stable production defaults remain two in-flight frames and ScreenCaptureKit queueDepth 3. New peers optionally negotiate bounded 1/2/3-frame diagnostics; old feedback peers keep their 20-byte ACKs and 60 fps target, and older peers retain 30 fps fallback. Retina pixel dimensions, bitrate and codec are unchanged.

@@ -29,7 +29,7 @@ struct MainView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(alignment: .firstTextBaseline, spacing: 9) {
                             Text("MacPair").font(.title2.bold())
-                            Text("v0.1.11 RC1").font(.caption).foregroundStyle(.secondary)
+                            Text("v0.1.11 RC2").font(.caption).foregroundStyle(.secondary)
                         }
                         Text(L("Your nearby Mac. Your second display.")).font(.caption).foregroundStyle(.secondary)
                     }
@@ -92,7 +92,10 @@ struct MainView: View {
                                 Button(L(model.smoothnessRunning ? "Cancel comparison" : "Compare 1 / 2 / 3 frames")) {
                                     if model.smoothnessRunning { model.cancelSmoothnessComparison() } else { model.compareSmoothness() }
                                 }
-                                Text(L("About 90 seconds · moving test pattern · resolution unchanged"))
+                                if !model.smoothnessRunning {
+                                    Button(L("Compare capture pipeline")) { model.compareSmoothness(captureQueues: true) }
+                                }
+                                Text(L("About 1–2 minutes · moving test pattern · resolution unchanged"))
                                     .font(.caption).foregroundStyle(.secondary)
                             }.padding(.vertical, 4)
                         } else if model.role == .host && model.connected && !model.diagnostic {

@@ -1,3 +1,35 @@
+# MacPair 0.1.11 RC2 — real capture pipeline / 真实采集链路
+
+**Update only the Host Mac. The Display Mac may stay on RC1.** Quit the old Host, open RC2, get a fresh six-digit code on the Display Mac and reconnect at the **same Retina preset and pixel dimensions**. The website's stable download remains 0.1.10.
+
+On the Host, choose **Diagnostics → Compare capture pipeline**. Allow about 84 seconds, up to 96 after rollback. Do not click the pattern or run another codec benchmark. Clicking the pattern, Esc or Cancel stops the comparison. The pattern closes automatically; then use **Show smoothness report** / **Copy diagnostics**.
+
+The same encrypted connection and cached Core Animation scrolling scene compares profiles in the bracketed order **off/3, on/3, on/5, on/5, on/3, off/3**, each twice, with a 2-second warm-up and 10-second measurement, then independently verifies the selected profile:
+
+- RC1-equivalent: two ACK frames, capture queue 3, streaming activity protection off.
+- Protected: two ACK frames, capture queue 3, scoped streaming activity protection on.
+- Queue candidate: two ACK frames, capture queue 5, the same protection on.
+
+Protection at queue 3 may remain at equivalent throughput (>=95% of baseline), provided all latency guards pass; this is not reported as an FPS gain. Activity protection exists only while streaming and is released on disconnect. It avoids background-task throttling without changing system power preferences. Normal frame window / capture queue remain **2 / 3**. Queue 5 is session-only and must improve ACK throughput >=10% versus both the protected queue-3 control and the RC1-equivalent baseline, with consistent repeats, reliable capture-PTS coverage and no substantial capture-age, ACK or cadence p95 regression. Receiver corruption or >2% drops rejects the candidate; failed independent verification restores the RC1-equivalent profile. Increasing encoder concurrency and switching encoders are **not** enabled: local probes did not establish latency-safe gains.
+
+**Measurement interpretation:** RC1's per-frame AppKit painting could perturb its source cadence. RC2 uses cached compositor animations; a scheduled animation is not a measured physical presentation rate. Main-loop ticks and actual ScreenCaptureKit complete-frame updates are reported separately. Compare profiles **within the RC2 run**; do not call a raw RC1→RC2 FPS difference an optimization gain when the test source changed.
+
+WindowServer and sample-PTS local deltas are signed; a reported presentation timestamp can lead a callback. Source percentiles require >=90% timestamp coverage; missing/out-of-range data stays unavailable. ACK ends at renderer submission and includes the return trip. Decoder completion inside the display layer and physical-display p95 are unavailable. Reports contain numbers only, never screen images or pairing secrets. All pairing remains memory-only, without Keychain.
+
+## 中文操作
+
+**只更新主机，副屏可以继续用 RC1。** 主机退出旧版并打开 RC2；副屏点 New code 取得新六位码，重新连接，保持本次的 **2940 × 1846 Retina** 设置不变。
+
+主机打开 **诊断信息 → 对比采集链路（Compare capture pipeline）**。约 84 秒，回退复测时约 96 秒。不要点击测试图案，也不要同时跑其他编码测试；点击图案、Esc 或取消可停止。完成后点「显示流畅度报告」或「复制诊断信息」，再告诉 Codex 已测好。
+
+同一连接、同一套系统合成动画，会各测两轮：① 等同 RC1 的两帧 ACK / 队列 3 / 不开启活动保护；② 两帧 / 队列 3 / 开启串流活动保护；③ 两帧 / 队列 5 / 开启保护，之后独立复测。正常默认队列仍为 3；只有重复结果稳定、吞吐提升、采集年龄和 ACK p95 不明显变坏、时间戳覆盖足够、接收端不出现异常丢帧时，才采用队列 5。保护只在串流期间生效，断开后释放，不修改系统电源设置。
+
+RC2 的图案改成缓存文字加系统合成动画，减少测试图案自身逐帧绘字的干扰。**使用本轮“等同 RC1 配置”的数据作为优化前基线，不能直接把两版不同图案的 FPS 相减。** 报告会区分主线程计时器、实际捕获帧数与无法直接测量的物理呈现帧率。时间戳覆盖不足的 p95 标为不可用；ACK 不是实际显示延迟。仍然不使用钥匙串、不保存画面、不降低 Retina 分辨率。
+
+---
+
+## Historical RC1 instructions / RC1 历史说明
+
 # MacPair 0.1.11 RC1 — smoothness comparison / 流畅度对比
 
 This is a test build. The website's stable release remains 0.1.10. No promised wireless frame rate. Pairing remains memory-only; no Keychain access.

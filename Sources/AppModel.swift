@@ -987,7 +987,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     func revealSmoothnessReport() {
         if let smoothnessReportURL { NSWorkspace.shared.activateFileViewerSelecting([smoothnessReportURL]) }
     }
-    func compareSmoothness() {
+    func compareSmoothness(captureQueues: Bool = false) {
         guard canCompareSmoothness, !smoothnessRunning, let streamer, let hello = activeHello,
               let captureDisplayID, let target = NSScreen.screens.first(where: {
                   ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == captureDisplayID
@@ -1004,46 +1004,64 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         smoothnessTask = Task { [weak self] in
             guard let self else { return }
             var trials: [VideoTrial] = []
+            let initialDepth = streamer.configuredCaptureQueueDepth
+            let initialActivity = streamer.streamingActivityProtected
             defer {
                 pattern.stop(); window.close()
                 if self.smoothnessWindow === window { self.smoothnessWindow = nil }
                 self.smoothnessRunning = false; self.smoothnessTask = nil
             }
+            @MainActor func measure(frames: Int, depth: Int, activity: Bool) async throws -> VideoTrial {
+                try Task.checkCancellation()
+                guard self.sessionID == token else { throw CancellationError() }
+                streamer.setStreamingActivity(activity)
+                try await streamer.setFrameLimit(frames)
+                try await streamer.setCaptureQueueDepth(depth)
+                try await Task.sleep(for: .seconds(2))
+                let rendererBefore = self.remoteRendererStats
+                pattern.beginRecording(); streamer.beginRecording()
+                try await Task.sleep(for: .seconds(10))
+                return VideoTrial(frames: frames, queueDepth: depth, measurements: streamer.finishRecording(),
+                    renderer: VideoRendererInterval.between(rendererBefore, self.remoteRendererStats), pattern: pattern.finishRecording(), streamingActivity: activity)
+            }
             do {
-                // Reverse the second pass to expose order/thermal/network drift.
                 for index in 0..<6 {
-                    let frames = index == 0 || index == 5 ? 2 : (index == 1 || index == 4 ? 1 : 3)
-                    try Task.checkCancellation()
-                    guard self.sessionID == token else { throw CancellationError() }
-                    self.smoothnessStatus = L("Comparing frames: \(frames) · trial \(index + 1)/6 · 12 seconds")
-                    try await streamer.setFrameLimit(frames)
-                    try await Task.sleep(for: .seconds(2))
-                    let rendererBefore = self.remoteRendererStats
-                    streamer.beginRecording()
-                    try await Task.sleep(for: .seconds(10))
-                    trials.append(VideoTrial(frames: frames, queueDepth: 3, measurements: streamer.finishRecording(),
-                        renderer: VideoRendererInterval.between(rendererBefore, self.remoteRendererStats)))
+                    let frames = captureQueues ? 2 : (index == 0 || index == 5 ? 2 : (index == 1 || index == 4 ? 1 : 3))
+                    let profile = index < 3 ? index : 5 - index
+                    let depth = captureQueues ? (profile == 2 ? 5 : 3) : initialDepth
+                    let activity = captureQueues ? profile != 0 : initialActivity
+                    self.smoothnessStatus = captureQueues
+                        ? L("Comparing capture: activity \(activity), queue \(depth) · trial \(index + 1)/6 · 12 seconds")
+                        : L("Comparing frames: \(frames) · trial \(index + 1)/6 · 12 seconds")
+                    trials.append(try await measure(frames: frames, depth: depth, activity: activity))
                 }
-                var selected = VideoExperimentReport.choose(trials)
+                var selected = captureQueues ? 2 : VideoExperimentReport.choose(trials)
+                let captureProfile = VideoExperimentReport.chooseCaptureProfile(trials)
+                var selectedDepth = captureQueues ? captureProfile.depth : initialDepth
+                var selectedActivity = captureQueues ? captureProfile.activity : initialActivity
                 var rejected: Int?
-                @MainActor func verify(_ frames: Int) async throws -> VideoTrial {
-                    self.smoothnessStatus = L("Verifying selection: \(frames) frames · 12 seconds")
-                    try await streamer.setFrameLimit(frames)
-                    try await Task.sleep(for: .seconds(2))
-                    let before = self.remoteRendererStats
-                    streamer.beginRecording()
-                    try await Task.sleep(for: .seconds(10))
-                    return VideoTrial(frames: frames, queueDepth: 3, measurements: streamer.finishRecording(),
-                        renderer: VideoRendererInterval.between(before, self.remoteRendererStats))
-                }
-                var verification = try await verify(selected)
-                if selected != 2, !VideoExperimentReport.verificationPasses(verification, baseline: trials) {
-                    rejected = selected; selected = 2; verification = try await verify(2)
+                self.smoothnessStatus = captureQueues ? L("Verifying capture queue: \(selectedDepth) · 12 seconds")
+                    : L("Verifying selection: \(selected) frames · 12 seconds")
+                var verification = try await measure(frames: selected, depth: selectedDepth, activity: selectedActivity)
+                let baseline = captureQueues ? trials.filter { $0.queueDepth == 3 && $0.streamingActivity == false } : trials.filter { $0.frames == 2 }
+                let passed = captureQueues ? VideoExperimentReport.verifyCaptureProfile(verification, baseline: baseline)
+                    : VideoExperimentReport.verificationPasses(verification, baseline: baseline)
+                if (captureQueues ? (selectedActivity || selectedDepth != 3) : selected != 2), !passed {
+                    rejected = captureQueues ? selectedDepth : selected; selected = 2; selectedDepth = 3
+                    selectedActivity = captureQueues ? false : initialActivity
+                    verification = try await measure(frames: 2, depth: 3, activity: selectedActivity)
                 }
                 let report = VideoExperimentReport(created: Date(), scope: "Real ScreenCaptureKit over authenticated peer connection; renderer submission/ACK, not physical presentation",
-                    context: ["mode": hello.mode, "path": self.path.localized, "os": ProcessInfo.processInfo.operatingSystemVersionString, "encoder": streamer.encoderInfo],
-                    width: hello.width, height: hello.height, targetFPS: hello.fps, trials: trials, selectedFrames: selected, verification: verification, rejectedCandidate: rejected,
-                    latencyRule: VideoExperimentReport.latencyRule, limitations: VideoExperimentReport.limitations)
+                    context: ["mode": hello.mode, "path": self.path.localized, "os": ProcessInfo.processInfo.operatingSystemVersionString,
+                        "encoder": streamer.encoderInfo, "lowPowerMode": String(ProcessInfo.processInfo.isLowPowerModeEnabled),
+                        "thermalState": String(ProcessInfo.processInfo.thermalState.rawValue),
+                        "patternOnActiveSpace": String(window.isOnActiveSpace), "patternVisible": String(window.occlusionState.contains(.visible)),
+                        "streamingActivityProtected": String(streamer.streamingActivityProtected)],
+                    width: hello.width, height: hello.height, targetFPS: hello.fps, trials: trials, selectedFrames: selected,
+                    comparisonKind: captureQueues ? "captureQueue" : "frameWindow", selectedQueueDepth: selectedDepth, selectedStreamingActivity: selectedActivity,
+                    verification: verification, rejectedCandidate: rejected,
+                    latencyRule: captureQueues ? VideoExperimentReport.captureLatencyRule : VideoExperimentReport.latencyRule,
+                    limitations: VideoExperimentReport.limitations)
                 let folder = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
                     .appendingPathComponent("MacPair/Performance", isDirectory: true)
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -1052,23 +1070,27 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
                 try encoder.encode(report).write(to: url, options: .atomic)
                 try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
                 self.smoothnessReportURL = url; self.smoothnessResults = report.text
-                self.smoothnessStatus = L("Comparison complete. Selected \(selected) frame(s) for this session.")
+                self.smoothnessStatus = captureQueues ? L("Comparison complete. Selected capture queue \(selectedDepth) for this session.")
+                    : L("Comparison complete. Selected \(selected) frame(s) for this session.")
                 self.log("Smoothness report: \(url.path)")
             } catch {
-                _ = streamer.finishRecording()
-                try? await streamer.setFrameLimit(2)
+                _ = streamer.finishRecording(); _ = pattern.finishRecording()
+                streamer.setStreamingActivity(initialActivity)
+                try? await streamer.setFrameLimit(2); try? await streamer.setCaptureQueueDepth(3)
                 self.smoothnessStatus = error is CancellationError ? L("Comparison cancelled. Restored two-frame default.") : error.localizedDescription
             }
         }
     }
     func copyDiagnostics() {
-        var details = ["MacPair 0.1.11 RC1", ProcessInfo.processInfo.operatingSystemVersionString,
+        var details = ["MacPair 0.1.11 RC2", ProcessInfo.processInfo.operatingSystemVersionString,
             L10n.text(role.rawValue), connectionTitle.localized, status.localized, path.localized]
         if connected { details.append("Live: RTT \(rtt), frames \(totalFrames), fps \(fps)"); details.append(videoPerformance) }
         if let previous = lastSession {
             details.append("Last session: RTT \(previous.rtt), frames \(previous.frames), \(previous.path.localized)")
             if let performance = previous.performance { details.append(performance) }
         }
+        if !smoothnessStatus.isEmpty { details.append(smoothnessStatus) }
+        if let smoothnessReportURL { details.append("Report: " + smoothnessReportURL.path) }
         if !smoothnessResults.isEmpty { details.append(smoothnessResults) }
         let text = (details + events.map(\.localized)).joined(separator: "\n")
         NSPasteboard.general.clearContents()

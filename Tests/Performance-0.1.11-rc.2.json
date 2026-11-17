@@ -1,0 +1,374 @@
+{
+  "date": "2026-11-17",
+  "decisions": [
+    "Do not switch encoders merely for a hardware label; measured encode p95 did not improve.",
+    "Do not increase encoder concurrency; measured p95 increase exceeded the latency budget.",
+    "Keep normal ACK window 2 and capture queue 3; compare activity protection and queue 5 with same-scene controls and rollback.",
+    "RC2 uses a compositor source; cross-version raw FPS cannot establish a speedup. Use the within-run RC1-equivalent profile."
+  ],
+  "encoderComparison": {
+    "framesPerCase": 90,
+    "results": [
+      {
+        "decodeMS": {
+          "mean": 2.6688157647058826,
+          "p95": 3.939334
+        },
+        "encodeMS": {
+          "mean": 16.741314788235293,
+          "p95": 18.30575
+        },
+        "encoderDetails": "encoder=com.apple.videotoolbox.videoencoder.h264.rtvc, hardware-query=-12900, value=nil, low-latency-rate-control=true, frame-delay-status=-12900",
+        "hardwareDecode": true,
+        "hardwareEncode": "unreported",
+        "hardwareRequired": true,
+        "height": 1846,
+        "input": "NV12/420v",
+        "lowLatency": true,
+        "meanEncodedBytes": 3368,
+        "requestedEncoder": "RC1 automatic low-latency",
+        "sampleBuildMS": {
+          "mean": 0.029141517647058832,
+          "p95": 0.068708
+        },
+        "width": 2940
+      },
+      {
+        "decodeMS": {
+          "mean": 2.790940694117646,
+          "p95": 4.820583
+        },
+        "encodeMS": {
+          "mean": 17.153618517647065,
+          "p95": 19.8895
+        },
+        "encoderDetails": "encoder=com.apple.videotoolbox.videoencoder.ave.avc, hardware-query=0, value=1, low-latency-rate-control=false, frame-delay-status=-12900",
+        "hardwareDecode": true,
+        "hardwareEncode": "yes",
+        "hardwareRequired": true,
+        "height": 1846,
+        "input": "NV12/420v",
+        "lowLatency": true,
+        "meanEncodedBytes": 3368,
+        "requestedEncoder": "com.apple.videotoolbox.videoencoder.ave.avc",
+        "sampleBuildMS": {
+          "mean": 0.02983681176470588,
+          "p95": 0.061292
+        },
+        "width": 2940
+      },
+      {
+        "decodeMS": {
+          "mean": 3.3911779176470587,
+          "p95": 5.297625
+        },
+        "encodeMS": {
+          "mean": 24.39047888235294,
+          "p95": 26.664625
+        },
+        "encoderDetails": "encoder=com.apple.videotoolbox.videoencoder.h264.rtvc, hardware-query=-12900, value=nil, low-latency-rate-control=true, frame-delay-status=-12900",
+        "hardwareDecode": true,
+        "hardwareEncode": "unreported",
+        "hardwareRequired": true,
+        "height": 2308,
+        "input": "NV12/420v",
+        "lowLatency": true,
+        "meanEncodedBytes": 5156,
+        "requestedEncoder": "RC1 automatic low-latency",
+        "sampleBuildMS": {
+          "mean": 0.03829762352941176,
+          "p95": 0.111
+        },
+        "width": 3676
+      },
+      {
+        "decodeMS": {
+          "mean": 3.6302584,
+          "p95": 7.217333
+        },
+        "encodeMS": {
+          "mean": 24.255824494117647,
+          "p95": 27.296541
+        },
+        "encoderDetails": "encoder=com.apple.videotoolbox.videoencoder.ave.avc, hardware-query=0, value=1, low-latency-rate-control=false, frame-delay-status=-12900",
+        "hardwareDecode": true,
+        "hardwareEncode": "yes",
+        "hardwareRequired": true,
+        "height": 2308,
+        "input": "NV12/420v",
+        "lowLatency": true,
+        "meanEncodedBytes": 5139,
+        "requestedEncoder": "com.apple.videotoolbox.videoencoder.ave.avc",
+        "sampleBuildMS": {
+          "mean": 0.03437054117647058,
+          "p95": 0.068375
+        },
+        "width": 3676
+      }
+    ],
+    "scope": "synthetic codec only; excludes screen capture, AWDL and presentation"
+  },
+  "encoderConcurrency": {
+    "results": [
+      {
+        "encodeFPS": 59.037164497886465,
+        "encodeMeanMS": 16.76882686666667,
+        "encodeP95MS": 19.225958,
+        "encoderSlots": 1,
+        "frames": 100,
+        "height": 1846,
+        "orderedCallbacks": true,
+        "width": 2940
+      },
+      {
+        "encodeFPS": 71.08758611203629,
+        "encodeMeanMS": 27.56608794444445,
+        "encodeP95MS": 32.555625,
+        "encoderSlots": 2,
+        "frames": 100,
+        "height": 1846,
+        "orderedCallbacks": true,
+        "width": 2940
+      },
+      {
+        "encodeFPS": 69.76480767112244,
+        "encodeMeanMS": 41.859402711111116,
+        "encodeP95MS": 50.724333,
+        "encoderSlots": 3,
+        "frames": 100,
+        "height": 1846,
+        "orderedCallbacks": true,
+        "width": 2940
+      },
+      {
+        "encodeFPS": 40.84493187575925,
+        "encodeMeanMS": 24.393083822222227,
+        "encodeP95MS": 27.127542,
+        "encoderSlots": 1,
+        "frames": 100,
+        "height": 2308,
+        "orderedCallbacks": true,
+        "width": 3676
+      },
+      {
+        "encodeFPS": 47.30516595407785,
+        "encodeMeanMS": 41.57246581111111,
+        "encodeP95MS": 45.61925,
+        "encoderSlots": 2,
+        "frames": 100,
+        "height": 2308,
+        "orderedCallbacks": true,
+        "width": 3676
+      },
+      {
+        "encodeFPS": 46.35715100242541,
+        "encodeMeanMS": 62.94387447777779,
+        "encodeP95MS": 68.734,
+        "encoderSlots": 3,
+        "frames": 100,
+        "height": 2308,
+        "orderedCallbacks": true,
+        "width": 3676
+      }
+    ],
+    "scope": "Generated encoder-only probe; unpaced submissions; excludes SCK, AWDL, decode and presentation"
+  },
+  "physicalRC1": {
+    "configurationChanged": false,
+    "interpretation": "ACK credit stalls are minimal. 13.8 to 15.8 FPS is same-configuration variation, not an optimization gain. Source-timestamp p95 has insufficient coverage and is not treated as full-population p95.",
+    "pixels": [
+      2940,
+      1846
+    ],
+    "selectedFrames": 2,
+    "transport": "AWDL awdl0",
+    "trials": [
+      {
+        "ackFPS": 12.70113700700613,
+        "captureFPS": 19.93101499560962,
+        "creditBlockedFraction": 0.0,
+        "frames": 2,
+        "p95MS": {
+          "ack": 65.631791,
+          "ackInterval": 125.588458,
+          "afterEncodeAck": 17.487875,
+          "captureInterval": 125.349542,
+          "decrypt": 0.063,
+          "dispatch": 0.037,
+          "encode": 42.645833,
+          "encrypt": 0.114125,
+          "localTransport": 0.545375,
+          "raw": 16.50325,
+          "renderer": 0.153,
+          "sample": 0.04,
+          "send": 0.767584,
+          "sendQueue": 0.043333
+        },
+        "queueDepth": 3,
+        "windowServerACKCoverage": 0.4076923076923077
+      },
+      {
+        "ackFPS": 12.877949999262917,
+        "captureFPS": 23.360002324244363,
+        "creditBlockedFraction": 0.07284040583746927,
+        "frames": 1,
+        "p95MS": {
+          "ack": 81.531791,
+          "ackInterval": 127.860375,
+          "afterEncodeAck": 19.993083,
+          "captureInterval": 122.793,
+          "decrypt": 0.221,
+          "dispatch": 0.036,
+          "encode": 44.412042,
+          "encrypt": 0.204333,
+          "localTransport": 1.969375,
+          "raw": 29.176667,
+          "renderer": 0.136,
+          "sample": 0.081,
+          "send": 2.170917,
+          "sendQueue": 0.052416
+        },
+        "queueDepth": 3,
+        "windowServerACKCoverage": 0.4186046511627907
+      },
+      {
+        "ackFPS": 18.579261738628436,
+        "captureFPS": 35.4694996828361,
+        "creditBlockedFraction": 0.0,
+        "frames": 3,
+        "p95MS": {
+          "ack": 84.962583,
+          "ackInterval": 118.561125,
+          "afterEncodeAck": 17.895417,
+          "captureInterval": 108.937041,
+          "decrypt": 0.281,
+          "dispatch": 0.036,
+          "encode": 44.46075,
+          "encrypt": 0.304,
+          "localTransport": 4.39525,
+          "raw": 30.781375,
+          "renderer": 0.119,
+          "sample": 0.105,
+          "send": 5.454209,
+          "sendQueue": 0.93275
+        },
+        "queueDepth": 3,
+        "windowServerACKCoverage": 0.1657754010695187
+      },
+      {
+        "ackFPS": 13.337934426712977,
+        "captureFPS": 19.46350431157375,
+        "creditBlockedFraction": 0.0,
+        "frames": 3,
+        "p95MS": {
+          "ack": 80.414792,
+          "ackInterval": 128.779334,
+          "afterEncodeAck": 12.529583,
+          "captureInterval": 126.441167,
+          "decrypt": 0.088,
+          "dispatch": 0.039,
+          "encode": 45.153125,
+          "encrypt": 0.168375,
+          "localTransport": 1.986,
+          "raw": 29.180167,
+          "renderer": 0.142,
+          "sample": 0.05,
+          "send": 2.861416,
+          "sendQueue": 0.673458
+        },
+        "queueDepth": 3,
+        "windowServerACKCoverage": 0.4
+      },
+      {
+        "ackFPS": 8.710206072387582,
+        "captureFPS": 8.710206072387582,
+        "creditBlockedFraction": 0.0,
+        "frames": 1,
+        "p95MS": {
+          "ack": 56.648,
+          "ackInterval": 136.9295,
+          "afterEncodeAck": 13.718833,
+          "captureInterval": 133.295083,
+          "decrypt": 0.06,
+          "dispatch": 0.037,
+          "encode": 44.291042,
+          "encrypt": 0.13475,
+          "localTransport": 1.250959,
+          "raw": 0.103333,
+          "renderer": 0.131,
+          "sample": 0.041,
+          "send": 1.501166,
+          "sendQueue": 0.094416
+        },
+        "queueDepth": 3,
+        "windowServerACKCoverage": 0.4888888888888889
+      },
+      {
+        "ackFPS": 14.849784594045085,
+        "captureFPS": 25.569165526170345,
+        "creditBlockedFraction": 0.0,
+        "frames": 2,
+        "p95MS": {
+          "ack": 76.082584,
+          "ackInterval": 131.510042,
+          "afterEncodeAck": 15.695708,
+          "captureInterval": 128.256625,
+          "decrypt": 0.238,
+          "dispatch": 0.038,
+          "encode": 42.770666,
+          "encrypt": 0.240042,
+          "localTransport": 1.042917,
+          "raw": 18.155208,
+          "renderer": 0.127,
+          "sample": 0.087,
+          "send": 1.937167,
+          "sendQueue": 0.524667
+        },
+        "queueDepth": 3,
+        "windowServerACKCoverage": 0.2781456953642384
+      }
+    ],
+    "verification": {
+      "ackFPS": 15.778001740486165,
+      "captureFPS": 28.69624066550921,
+      "creditBlockedFraction": 0.0,
+      "frames": 2,
+      "p95MS": {
+        "ack": 72.051792,
+        "ackInterval": 128.964458,
+        "afterEncodeAck": 13.393833,
+        "captureInterval": 124.880917,
+        "decrypt": 0.251,
+        "dispatch": 0.037,
+        "encode": 43.735,
+        "encrypt": 0.237042,
+        "localTransport": 1.174375,
+        "raw": 18.773542,
+        "renderer": 0.116,
+        "sample": 0.096,
+        "send": 2.225791,
+        "sendQueue": 0.72575
+      },
+      "queueDepth": 3,
+      "windowServerACKCoverage": 0.25
+    }
+  },
+  "physicalRC2": {
+    "afterFPS": null,
+    "afterP95MS": null,
+    "beforeFPS": null,
+    "beforeP95MS": null,
+    "status": "pending"
+  },
+  "schema": 1,
+  "scope": "Real RC1 diagnosis plus generated local follow-up probes; RC2 real before/after is pending. No private names, pairing records or images included.",
+  "validation": [
+    "Universal arm64/x86_64 strict codesign; no SecItem/SecKeychain imports",
+    "Existing security, pairing/session-memory/discovery tests passed",
+    "Signed timing and sparse timestamp coverage guards passed",
+    "Capture-profile throughput/latency/source/rollback policy regressions passed",
+    "Generated encrypted Retina path preserved frame order and a two-frame peak; activity released on stop",
+    "Compositor source start, main-loop event recording, cleanup and app-owned snapshot verified",
+    "Live SCK queue changes and real RC2 speedup require the host run; no physical after values invented"
+  ]
+}

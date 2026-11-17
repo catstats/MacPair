@@ -14,8 +14,23 @@ final class H264Encoder {
     let fps: Int
     let bitrate: Int
     private(set) var lowLatencyEnabled = false
+    private(set) var hardwareRequired = false
+    private(set) var lowLatencyRateControl = false
+    private(set) var frameDelayStatus: OSStatus?
+    private(set) var encoderFallback: String?
+    static let preferredHardwareEncoderID: String? = {
+        var list: CFArray?
+        guard VTCopyVideoEncoderList(nil, &list) == noErr, let records = list as? [[String: Any]] else { return nil }
+        return records.filter {
+            ($0[kVTVideoEncoderList_CodecType as String] as? NSNumber)?.uint32Value == kCMVideoCodecType_H264 &&
+            ($0[kVTVideoEncoderList_IsHardwareAccelerated as String] as? NSNumber)?.boolValue == true
+        }.sorted {
+            (($0[kVTVideoEncoderList_PerformanceRating as String] as? NSNumber)?.intValue ?? 0) >
+            (($1[kVTVideoEncoderList_PerformanceRating as String] as? NSNumber)?.intValue ?? 0)
+        }.first?[kVTVideoEncoderList_EncoderID as String] as? String
+    }()
     var onOutput: ((Data?, Data?, LocalizedMessage?) -> Void)?
-    init(width: Int, height: Int, fps: Int, lowLatency: Bool = true) throws {
+    init(width: Int, height: Int, fps: Int, lowLatency: Bool = true, hardwareEncoderID: String? = nil, allowEncoderFallback: Bool = true) throws {
         self.fps = fps
         bitrate = min(45_000_000, max(8_000_000, Int(Double(width) * Double(height) * Double(fps) * 0.18)))
         var result: VTCompressionSession?
@@ -27,12 +42,14 @@ final class H264Encoder {
             }
             encoder.output(sample)
         }
+        var selectedID = hardwareEncoderID
         func create(_ fast: Bool) -> OSStatus {
             var specification: [CFString: Any] = [kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder: true]
-            if fast {
-                specification[kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder] = true
-                specification[kVTVideoEncoderSpecification_EnableLowLatencyRateControl] = true
-            }
+            if fast || selectedID != nil { specification[kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder] = true }
+            if let selectedID { specification[kVTVideoEncoderSpecification_EncoderID] = selectedID }
+            // The low-latency rate-control override selects a different encoder and
+            // is incompatible with this Mac's enumerated AVE hardware encoder.
+            if fast && selectedID == nil { specification[kVTVideoEncoderSpecification_EnableLowLatencyRateControl] = true }
             return VTCompressionSessionCreate(allocator: kCFAllocatorDefault,
                 width: Int32(width), height: Int32(height), codecType: kCMVideoCodecType_H264,
                 encoderSpecification: specification as CFDictionary, imageBufferAttributes: nil,
@@ -40,9 +57,15 @@ final class H264Encoder {
                 refcon: Unmanaged.passUnretained(self).toOpaque(), compressionSessionOut: &result)
         }
         var status = create(lowLatency)
+        if status != noErr, selectedID != nil, allowEncoderFallback {
+            encoderFallback = "requested hardware encoder unavailable (\(status)); retrying automatic selection"
+            result = nil; selectedID = nil; status = create(lowLatency)
+        }
         var selectedFast = lowLatency && status == noErr
-        if status != noErr && lowLatency { result = nil; status = create(false); selectedFast = false }
+        if status != noErr && lowLatency && (selectedID == nil || allowEncoderFallback) { result = nil; status = create(false); selectedFast = false }
         lowLatencyEnabled = selectedFast
+        hardwareRequired = selectedID != nil || selectedFast
+        lowLatencyRateControl = selectedID == nil && selectedFast
         try checkStatus(status, "Create H.264 encoder")
         guard let result else { throw PairError.message("No H.264 encoder is available") }
         session = result
@@ -58,7 +81,7 @@ final class H264Encoder {
             for (key, value) in properties {
                 try checkStatus(VTSessionSetProperty(result, key: key, value: value as CFTypeRef), "Set H.264 property \(key)")
             }
-            if lowLatencyEnabled { _ = VTSessionSetProperty(result, key: kVTCompressionPropertyKey_MaxFrameDelayCount, value: 0 as NSNumber) }
+            if lowLatencyEnabled { frameDelayStatus = VTSessionSetProperty(result, key: kVTCompressionPropertyKey_MaxFrameDelayCount, value: 0 as NSNumber) }
             try checkStatus(VTCompressionSessionPrepareToEncodeFrames(result), "Prepare encoder")
         } catch { stop(); throw error }
     }
@@ -76,7 +99,7 @@ final class H264Encoder {
     var encoderDetails: String {
         let (status, value) = copiedProperty(kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder)
         let identifier = copiedProperty(kVTCompressionPropertyKey_EncoderID).1 as? String ?? "unreported"
-        return "encoder=\(identifier), hardware-query=\(status), value=\(value.map { String(describing: $0) } ?? "nil")"
+        return "encoder=\(identifier), hardware-query=\(status), value=\(value.map { String(describing: $0) } ?? "nil"), low-latency-rate-control=\(lowLatencyRateControl), frame-delay-status=\(frameDelayStatus.map(String.init) ?? "unreported")" + (encoderFallback.map { "; " + $0 } ?? "")
     }
     func encode(_ pixelBuffer: CVPixelBuffer, forceKeyframe: Bool = false) throws {
         guard let session else { throw PairError.message("The encoder has stopped") }
@@ -201,7 +224,7 @@ final class H264Samples {
 // Encoder/window state belongs to queue; raw admission/stopping uses lock.
 // Callbacks are configured before capture starts and remain immutable until stop.
 final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
-    private struct Capture { let image: CVPixelBuffer; let at: UInt64; let sourceAt: UInt64? }
+    private struct Capture { let image: CVPixelBuffer; let at: UInt64; let sourceAt: UInt64?; let sampleAt: UInt64? }
     private struct Encoding { let id: UInt64; let started: UInt64 }
     private let link: PeerLink
     private let encoder: H264Encoder
@@ -221,6 +244,8 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     private let metrics = VideoMetrics()
     private var watchdog: DispatchSourceTimer?
     private var stream: SCStream?
+    private var captureConfiguration: SCStreamConfiguration?
+    private var streamingActivity: NSObjectProtocol?
     private var reportedDimensions = false
     private let expectedWidth: Int
     private let expectedHeight: Int
@@ -243,7 +268,7 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         }
     }
     var encoderInfo: String {
-        "H.264 \(encoder.encoderDetails)\n\(L("Hardware required"))=\(encoder.lowLatencyEnabled) · \(L("Low latency"))=\(encoder.lowLatencyEnabled) · NV12/420v · \(L("Frame feedback"))=\(feedback)"
+        "H.264 \(encoder.encoderDetails)\n\(L("Hardware required"))=\(encoder.hardwareRequired) · \(L("Low latency"))=\(encoder.lowLatencyEnabled) · NV12/420v · \(L("Frame feedback"))=\(feedback)"
     }
     func snapshot(reset: Bool = true) -> VideoMetricsSnapshot { metrics.snapshot(reset: reset) }
 
@@ -252,6 +277,27 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         await withCheckedContinuation { continuation in
             queue.async { self.window.setLimit(limit); self.schedulePump(); continuation.resume() }
         }
+    }
+    var streamingActivityProtected: Bool { lock.withLock { streamingActivity != nil } }
+    func setStreamingActivity(_ enabled: Bool) {
+        lock.withLock {
+            if enabled, !stopped, streamingActivity == nil {
+                streamingActivity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical], reason: "Wireless display streaming")
+            } else if !enabled, let activity = streamingActivity {
+                ProcessInfo.processInfo.endActivity(activity); streamingActivity = nil
+            }
+        }
+    }
+    var configuredCaptureQueueDepth: Int { lock.withLock { captureDepth } }
+    func setCaptureQueueDepth(_ depth: Int) async throws {
+        guard [3, 5].contains(depth), let stream, let configuration = captureConfiguration else {
+            throw PairError.message("Capture is not ready for queue comparison")
+        }
+        let oldDepth = configuredCaptureQueueDepth
+        if oldDepth == depth { return }
+        configuration.queueDepth = depth
+        do { try await stream.updateConfiguration(configuration); lock.withLock { captureDepth = depth } }
+        catch { configuration.queueDepth = oldDepth; throw error }
     }
     func beginRecording() { metrics.beginRecording() }
     func finishRecording() -> VideoTrialMeasurements { metrics.finishRecording() }
@@ -284,8 +330,9 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         } else { filter = SCContentFilter(display: target, excludingApplications: [], exceptingWindows: []) }
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: captureQueue)
-        self.stream = stream
+        self.stream = stream; self.captureConfiguration = configuration
         queue.async { self.startWatchdog() }
+        setStreamingActivity(true)
         try await stream.startCapture()
     }
 
@@ -296,12 +343,20 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
               SCFrameStatus(rawValue: rawStatus) == .complete,
               let image = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let ticks = attachments.first?[.displayTime] as? UInt64
-        submit(image, sourceAt: ticks.map { VideoClock.nanoseconds(ticks: $0) })
+        let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let age = CMTimeGetSeconds(CMTimeSubtract(hostTime, pts))
+        let callback = VideoClock.now
+        let sampleAt: UInt64?
+        if age.isFinite, age >= -0.1, age < 5, Double(callback) >= max(0, age * 1e9) {
+            sampleAt = age >= 0 ? callback - UInt64(age * 1e9) : callback + UInt64(-age * 1e9)
+        } else { sampleAt = nil }
+        submit(image, sourceAt: ticks.map { VideoClock.nanoseconds(ticks: $0) }, sampleAt: sampleAt)
     }
 
     /// The production capture callback and generated-frame tests share admission.
     /// Only this one latest raw buffer may wait; encoded frames stay ordered.
-    func submit(_ image: CVPixelBuffer, sourceAt: UInt64? = nil) {
+    func submit(_ image: CVPixelBuffer, sourceAt: UInt64? = nil, sampleAt: UInt64? = nil) {
         guard CVPixelBufferGetWidth(image) == expectedWidth, CVPixelBufferGetHeight(image) == expectedHeight else {
             onError?("Screen capture returned unexpected pixel dimensions"); return
         }
@@ -310,11 +365,20 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         lock.lock()
         guard !stopped else { lock.unlock(); return }
         let replaced = latest != nil
-        let validSource = sourceAt.flatMap { $0 <= at && at - $0 < 5_000_000_000 ? $0 : nil }
-        latest = Capture(image: image, at: at, sourceAt: validSource)
+        let validSource = sourceAt.flatMap { stamp -> UInt64? in
+            if stamp <= at { return at - stamp < 5_000_000_000 ? stamp : nil }
+            return stamp - at <= 100_000_000 ? stamp : nil
+        }
+        if let sourceAt {
+            if sourceAt > at { metrics.event("sourceTimestampAhead"); metrics.timing("sourceLead", ns: sourceAt - at) }
+            else if validSource == nil { metrics.event("sourceTimestampStale") }
+        } else { metrics.event("sourceTimestampMissing") }
+        latest = Capture(image: image, at: at, sourceAt: validSource, sampleAt: sampleAt)
+        if let sampleAt { metrics.timing("sampleAge", milliseconds: VideoClock.milliseconds(from: sampleAt, to: at)) }
+        else { metrics.event("sampleTimestampUnavailable") }
         if let previousCapture { metrics.timing("captureInterval", ns: at - previousCapture) }
         previousCapture = at
-        if let validSource { metrics.timing("captureAge", ns: at - validSource) }
+        if let validSource { metrics.timing("captureAge", milliseconds: VideoClock.milliseconds(from: validSource, to: at)) }
         lock.unlock()
         if replaced { metrics.event("replace") }
         schedulePump()
@@ -337,7 +401,7 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         metrics.setCreditBlocked(false)
         latest = nil
         lock.unlock()
-        guard let id = window.reserve(capturedAt: capture.at, sourceAt: capture.sourceAt) else { return }
+        guard let id = window.reserve(capturedAt: capture.at, sourceAt: capture.sourceAt, sampleAt: capture.sampleAt) else { return }
         let now = VideoClock.now
         metrics.depth(window.count); metrics.timing("raw", ns: now - capture.at)
         encoding = Encoding(id: id, started: now)
@@ -398,7 +462,8 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
                 self.previousAcknowledgement = acknowledgedAt
                 self.metrics.event("ack")
                 self.metrics.timing("ack", ns: VideoClock.now - entry.capturedAt)
-                if let sourceAt = entry.sourceAt { self.metrics.timing("sourceAck", ns: VideoClock.now - sourceAt) }
+                if let sourceAt = entry.sourceAt { self.metrics.timing("sourceAck", milliseconds: VideoClock.milliseconds(from: sourceAt, to: VideoClock.now)) }
+                if let sampleAt = entry.sampleAt { self.metrics.timing("sampleAck", milliseconds: VideoClock.milliseconds(from: sampleAt, to: VideoClock.now)) }
                 if let encodedAt = entry.encodedAt { self.metrics.timing("afterEncodeAck", ns: VideoClock.now - encodedAt) }
                 if let decrypt = acknowledgement.decryptUS { self.metrics.timing("decrypt", ns: UInt64(decrypt) * 1_000) }
                 self.metrics.timing("dispatch", ns: UInt64(acknowledgement.dispatchUS) * 1_000)
@@ -421,13 +486,15 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         }
         watchdog = timer; timer.resume()
     }
+    deinit { if let streamingActivity { ProcessInfo.processInfo.endActivity(streamingActivity) } }
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         if !lock.withLock({ stopped }) { onError?(error.appMessage) }
     }
     func stop() async {
         lock.withLock { stopped = true; latest = nil }
+        setStreamingActivity(false)
         if let stream { try? await stream.stopCapture() }
-        stream = nil
+        stream = nil; captureConfiguration = nil
         await withCheckedContinuation { continuation in
             queue.async {
                 self.watchdog?.cancel(); self.watchdog = nil

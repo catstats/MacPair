@@ -11,6 +11,9 @@ enum VideoClock {
     static func nanoseconds(ticks: UInt64) -> UInt64 {
         UInt64(Double(ticks) * Double(timebase.numer) / Double(timebase.denom))
     }
+    static func milliseconds(from start: UInt64, to end: UInt64) -> Double {
+        end >= start ? Double(end - start) / 1e6 : -Double(start - end) / 1e6
+    }
     static func microseconds(_ ns: UInt64) -> UInt32 { UInt32(min(UInt64(UInt32.max), ns / 1_000)) }
 }
 
@@ -80,7 +83,7 @@ struct VideoAcknowledgement {
 /// Credits cover encoding, TCP and receiver submission together. Only raw
 /// captures can be replaced; an encoded predictive frame is never discarded.
 struct VideoFrameWindow {
-    struct Entry { let capturedAt: UInt64; let sourceAt: UInt64?; var encodedAt: UInt64? }
+    struct Entry { let capturedAt: UInt64; let sourceAt: UInt64?; let sampleAt: UInt64?; var encodedAt: UInt64? }
     private(set) var limit: Int
     private var nextID: UInt64 = 1
     private(set) var entries: [UInt64: Entry] = [:]
@@ -91,10 +94,10 @@ struct VideoFrameWindow {
     var count: Int { entries.count }
     var available: Bool { entries.count < limit }
     var oldest: UInt64? { entries.values.map(\.capturedAt).min() }
-    mutating func reserve(capturedAt: UInt64, sourceAt: UInt64? = nil) -> UInt64? {
+    mutating func reserve(capturedAt: UInt64, sourceAt: UInt64? = nil, sampleAt: UInt64? = nil) -> UInt64? {
         guard available, nextID < UInt64.max else { return nil }
         let id = nextID; nextID += 1
-        entries[id] = Entry(capturedAt: capturedAt, sourceAt: sourceAt, encodedAt: nil); return id
+        entries[id] = Entry(capturedAt: capturedAt, sourceAt: sourceAt, sampleAt: sampleAt, encodedAt: nil); return id
     }
     mutating func encoded(_ id: UInt64, at now: UInt64) throws {
         guard entries[id] != nil else { throw PairError.message("Invalid video acknowledgement") }
@@ -190,9 +193,10 @@ final class VideoMetrics {
             return result
         }
     }
-    func timing(_ key: String, ns: UInt64) {
+    func timing(_ key: String, ns: UInt64) { timing(key, milliseconds: Double(ns) / 1e6) }
+    func timing(_ key: String, milliseconds value: Double) {
+        guard value.isFinite else { return }
         lock.withLock {
-            let value = Double(ns) / 1e6
             if recordingStart != nil, recordingTimes[key, default: []].count < 12_000 {
                 recordingTimes[key, default: []].append(value)
             }
@@ -230,5 +234,13 @@ struct VideoTrialMeasurements: Codable {
     let peakOutstanding: Int
     let durationsMS: [String: Double]
     func rate(_ key: String) -> Double { Double(counts[key, default: 0]) / max(seconds, 0.001) }
+    func coverage(_ key: String) -> Double {
+        let expected = ["captureAge", "sampleAge"].contains(key) ? counts["capture", default: 0] : counts["ack", default: 0]
+        return min(1, Double(times[key]?.count ?? 0) / Double(max(1, expected)))
+    }
+    func reliableP95(_ key: String) -> Double? {
+        if ["sourceAck", "captureAge", "sampleAge", "sampleAck"].contains(key), coverage(key) < 0.9 { return nil }
+        return times[key]?.p95
+    }
     var creditBlockedFraction: Double { min(1, durationsMS["creditStall", default: 0] / max(1, seconds * 1000)) }
 }

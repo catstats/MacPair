@@ -1,6 +1,6 @@
 <p align="center"><img src="Resources/Branding/MacPair%20Dual%20Monitor%20Logo.png" width="560" alt="MacPair"></p>
 
-> **本测试分支：0.1.11 RC1。** [测试包](https://github.com/catstats/MacPair/releases/tag/v0.1.11-rc.1) · [两台 Mac 测试说明](SMOOTHNESS-TEST.md)。稳定版仍为 0.1.10，真实两机优化后数据待测。
+> **本测试分支：0.1.11 RC2。** [测试包](https://github.com/catstats/MacPair/releases/tag/v0.1.11-rc.2) · [两台 Mac 测试说明](SMOOTHNESS-TEST.md)。稳定版仍为 0.1.10，真实两机优化后数据待测。
 
 
 # MacPair

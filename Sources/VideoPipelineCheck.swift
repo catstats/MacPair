@@ -91,6 +91,8 @@ enum VideoPipelineCheck {
                 try await wait({ probe.clientReady && probe.serverReady }, "Generated-video authentication failed")
                 let streamer = try ScreenStreamer(link: peer, width: width, height: height, fps: 60, feedback: true)
                 sender = streamer
+                streamer.setStreamingActivity(true)
+                guard streamer.streamingActivityProtected else { throw PairError.message("Streaming activity did not begin") }
                 streamer.onError = { message in DispatchQueue.main.async { probe.failure = message.localized } }
                 peer.setMediaHandler { packet in
                     guard packet.kind == .videoAck else { return false }
@@ -123,6 +125,7 @@ enum VideoPipelineCheck {
                 print("Generated/throttled check: \(sent.totals["capture", default: 0]) captures, \(sent.totals["ack", default: 0]) submitted/ACKed, peak \(sent.peakOutstanding) in flight; NOT an AWDL performance measurement")
                 peer.onClosed = nil; probe.server?.onClosed = nil
                 await streamer.stop()
+                guard !streamer.streamingActivityProtected else { throw PairError.message("Streaming activity was not released") }
                 videoReceiver.stop(); peer.cancel(); probe.server?.cancel(); endpoint.cancel()
                 generatedWindow.close()
                 exit(0)

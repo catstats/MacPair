@@ -15,10 +15,20 @@ enum VideoBenchmark {
         setbuf(stdout, nil)
         do {
             var records: [[String: Any]] = []
-            for (width, height) in [(1230, 800), (2560, 1664)] {
+            if CommandLine.arguments.contains("--encoder-comparison") {
+                guard let hardwareID = H264Encoder.preferredHardwareEncoderID else { throw PairError.message("No enumerated H.264 hardware encoder") }
+                for (width, height) in [(2940, 1846), (3676, 2308)] {
+                    for useHardware in [false, true] {
+                        let record = try codec(width: width, height: height, nv12: true, hardwareEncoderID: useHardware ? hardwareID : nil)
+                        records.append(record)
+                        fputs("Measured \(width)x\(height), \(useHardware ? hardwareID : "RC1 automatic")\n", stderr)
+                    }
+                }
+            } else { for (width, height) in [(1230, 800), (2560, 1664)] {
                 for nv12 in [false, true] {
                     records.append(try codec(width: width, height: height, nv12: nv12))
                 }
+            }
             }
             let result: [String: Any] = ["scope": "synthetic codec only; excludes screen capture, AWDL and presentation",
                 "framesPerCase": 90, "results": records]
@@ -66,8 +76,8 @@ enum VideoBenchmark {
         }
         return result
     }
-    private static func codec(width: Int, height: Int, nv12: Bool) throws -> [String: Any] {
-        let encoder = try H264Encoder(width: width, height: height, fps: 60, lowLatency: !CommandLine.arguments.contains("--legacy-encoder"))
+    private static func codec(width: Int, height: Int, nv12: Bool, hardwareEncoderID: String? = nil) throws -> [String: Any] {
+        let encoder = try H264Encoder(width: width, height: height, fps: 60, lowLatency: !CommandLine.arguments.contains("--legacy-encoder"), hardwareEncoderID: hardwareEncoderID, allowEncoderFallback: false)
         defer { encoder.stop() }
         let buffers = try (0..<2).map { try pattern(width: width, height: height, nv12: nv12, offset: $0) }
         let encoded = DispatchSemaphore(value: 0)
@@ -118,13 +128,13 @@ enum VideoBenchmark {
         }
         func summary(_ values: [Double]) -> [String: Double] {
             let sorted = values.sorted()
-            return ["mean": values.reduce(0,+) / Double(values.count), "p95": sorted[Int(Double(sorted.count - 1) * 0.95)]]
+            return ["mean": values.reduce(0,+) / Double(values.count), "p95": sorted[max(0, Int(ceil(Double(sorted.count) * 0.95)) - 1)]]
         }
         var hardwareDecode: Unmanaged<CFTypeRef>?
         if let decoder { VTSessionCopyProperty(decoder, key: kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder,
             allocator: kCFAllocatorDefault, valueOut: &hardwareDecode) }
-        return ["width": width, "height": height, "input": nv12 ? "NV12/420v" : "BGRA",
-            "hardwareEncode": encoder.reportedHardwareAcceleration.map { $0 ? "yes" : "no" } ?? "unreported", "hardwareRequired": encoder.lowLatencyEnabled, "lowLatency": encoder.lowLatencyEnabled, "encoderDetails": encoder.encoderDetails, "hardwareDecode": (hardwareDecode?.takeRetainedValue() as? NSNumber)?.boolValue ?? false,
+        return ["requestedEncoder": hardwareEncoderID ?? "RC1 automatic low-latency", "width": width, "height": height, "input": nv12 ? "NV12/420v" : "BGRA",
+            "hardwareEncode": encoder.reportedHardwareAcceleration.map { $0 ? "yes" : "no" } ?? "unreported", "hardwareRequired": encoder.hardwareRequired, "lowLatency": encoder.lowLatencyEnabled, "encoderDetails": encoder.encoderDetails, "hardwareDecode": (hardwareDecode?.takeRetainedValue() as? NSNumber)?.boolValue ?? false,
             "encodeMS": summary(encodeMS), "sampleBuildMS": summary(buildMS), "decodeMS": summary(decodeMS),
             "meanEncodedBytes": byteCount / encodeMS.count]
     }

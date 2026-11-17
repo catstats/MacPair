@@ -323,6 +323,38 @@ enum DiagnosticTests {
                 times: ["ack": VideoTiming([p95])], peakOutstanding: frames, durationsMS: [:])
             return VideoTrial(frames: frames, queueDepth: 3, measurements: m)
         }
+        try expect(VideoClock.milliseconds(from: 2_000_000, to: 1_000_000) == -1, "A leading source timestamp underflowed")
+        let sparse = VideoTrialMeasurements(seconds: 10, counts: ["ack": 100, "capture": 100],
+            times: ["sourceAck": VideoTiming([5]), "sampleAge": VideoTiming([1])], peakOutstanding: 2, durationsMS: [:])
+        try expect(sparse.reliableP95("sourceAck") == nil && sparse.reliableP95("sampleAge") == nil, "Sparse source timestamps were presented as full-population p95")
+        func queueTrial(_ depth: Int, fps: Double, ack: Double, age: Double, draw: Double = 60) -> VideoTrial {
+            let capture = 600
+            let m = VideoTrialMeasurements(seconds: 10, counts: ["ack": Int(fps * 10), "capture": capture],
+                times: ["ack": VideoTiming([ack]), "sampleAge": VideoTiming(Array(repeating: age, count: capture)), "ackInterval": VideoTiming([30])],
+                peakOutstanding: 2, durationsMS: [:])
+            let pattern = VideoTrialMeasurements(seconds: 10, counts: ["draw": Int(draw * 10)], times: [:], peakOutstanding: 0, durationsMS: [:])
+            return VideoTrial(frames: 2, queueDepth: depth, measurements: m, pattern: pattern)
+        }
+        let q3 = queueTrial(3, fps: 20, ack: 50, age: 5)
+        let q5 = queueTrial(5, fps: 35, ack: 55, age: 6)
+        try expect(VideoExperimentReport.chooseCaptureDepth([q3,q5,q5,q3]) == 5, "A verified low-latency capture-queue gain was rejected")
+        let oldAge = queueTrial(5, fps: 35, ack: 55, age: 25)
+        try expect(VideoExperimentReport.chooseCaptureDepth([q3,oldAge,oldAge,q3]) == 3, "A stale capture queue was promoted")
+        let slowSource = queueTrial(5, fps: 35, ack: 55, age: 6, draw: 20)
+        try expect(VideoExperimentReport.chooseCaptureDepth([q3,slowSource,slowSource,q3]) == 3, "An undersupplied test source promoted queue depth")
+        try expect(VideoExperimentReport.verifyCaptureDepth(q5, baseline: [q3,q3]), "Valid queue verification failed")
+        try expect(!VideoExperimentReport.verifyCaptureDepth(queueTrial(5, fps: 18, ack: 55, age: 6), baseline: [q3,q3]), "Capture verification accepted a throughput regression")
+        var off3 = q3; off3.streamingActivity = false
+        var on3 = queueTrial(3, fps: 30, ack: 55, age: 6); on3.streamingActivity = true
+        var on5 = queueTrial(5, fps: 40, ack: 56, age: 7); on5.streamingActivity = true
+        var equivalent = q3; equivalent.streamingActivity = true
+        let stableProtection = VideoExperimentReport.chooseCaptureProfile([off3,equivalent,off3,equivalent])
+        try expect(stableProtection.activity && stableProtection.depth == 3, "Equivalent-throughput protection was disabled despite passing latency guards")
+        let chosen = VideoExperimentReport.chooseCaptureProfile([off3,on3,on5,off3,on3,on5])
+        try expect(chosen.activity && chosen.depth == 5, "Valid activity/capture profile was rejected")
+        var stale5 = oldAge; stale5.streamingActivity = true
+        let safe = VideoExperimentReport.chooseCaptureProfile([off3,on3,stale5,off3,on3,stale5])
+        try expect(safe.activity && safe.depth == 3, "A stale queue displaced the safe activity-only profile")
         let baseline = [trial(2, 20, 50), trial(2, 20, 50)]
         let faster = trial(3, 35, 55), slower = trial(3, 35, 90)
         try expect(VideoExperimentReport.choose(baseline + [faster, faster]) == 3, "A faster latency-safe window was rejected")
@@ -910,6 +942,7 @@ enum MacPairLauncher {
     @MainActor
     static func main() {
         setbuf(stdout, nil)
+        if CommandLine.arguments.contains("--pattern-smoke-test") { VideoPatternCheck.run() }
         if CommandLine.arguments.contains("--flow-benchmark") { VideoFlowBenchmark.run() }
         if CommandLine.arguments.contains("--video-pipeline-test") { VideoPipelineCheck.run() }
         if CommandLine.arguments.contains("--performance-test") { VideoBenchmark.run() }

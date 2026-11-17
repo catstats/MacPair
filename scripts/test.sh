@@ -21,4 +21,5 @@ fi
 
 if [[ "${1:-}" == "--video" ]]; then
     "$app_binary" --video-pipeline-test
+    "$app_binary" --pattern-smoke-test
 fi
