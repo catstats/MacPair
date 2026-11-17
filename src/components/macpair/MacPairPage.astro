@@ -1,0 +1,238 @@
+---
+import { Icon } from 'astro-icon/components';
+import Layout from '~/layouts/Layout.astro';
+import Button from '~/components/ui/Button.astro';
+import Headline from '~/components/ui/Headline.astro';
+import WidgetWrapper from '~/components/ui/WidgetWrapper.astro';
+import StructuredData from '~/components/common/StructuredData.astro';
+import DesktopDemo from '~/components/macpair/DesktopDemo.astro';
+import { product } from '~/data/product';
+import { copy, type Locale } from '~/data/copy';
+import { SITE } from 'astrowind:config';
+import { getAsset, getPermalink } from '~/utils/permalinks';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const t = copy[locale];
+const schema = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: product.name,
+  applicationCategory: 'UtilitiesApplication',
+  operatingSystem: 'macOS 13 or later',
+  softwareVersion: product.version,
+  url: new URL(Astro.url.pathname, SITE.site).href,
+  inLanguage: t.lang,
+  downloadUrl: new URL(product.download, SITE.site).href,
+  license: new URL(getAsset('/licenses/MacPair-GPL-3.0.txt'), SITE.site).href,
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+};
+---
+
+<Layout title={t.title} description={t.description} locale={locale} languageAlternates>
+  <StructuredData slot="head" schema={schema} />
+  <header class="site-header">
+    <div class="site-width header-inner">
+      <a class="brand" href="#" aria-label={t.navigation.home}>
+        <img src={getAsset('/brand/macpair-icon.png')} width="34" height="34" alt="" /><span>MacPair</span>
+      </a>
+      <nav aria-label={t.navigation.label}>
+        <a href="#features">{t.navigation.features}</a><a href="#setup">{t.navigation.setup}</a><a
+          href={product.github}
+          target="_blank"
+          rel="noopener noreferrer">{t.navigation.source}</a
+        >
+        <a class="nav-download" href={product.download} download
+          >{t.navigation.download} <Icon name="tabler:arrow-down" /></a
+        >
+      </nav>
+      <a
+        class="language-switch"
+        href={getPermalink(t.navigation.switchHref)}
+        lang={t.navigation.switchLang}
+        hreflang={t.navigation.switchLang}
+        aria-label={t.navigation.switchLabel}
+        data-language-switch
+      >
+        <Icon name="tabler:language" /><span>{t.navigation.switchText}</span>
+      </a>
+    </div>
+  </header>
+  <main id="main">
+    <section class="hero site-width" aria-labelledby="hero-title">
+      <p class="eyebrow">{t.hero.native} <span>·</span> {t.hero.open}</p>
+      <h1 id="hero-title">{t.hero.title[0]}<br /><span>{t.hero.title[1]}</span></h1>
+      <p class="hero-description">
+        {t.hero.description[0]}<br class="desktop-break" />
+        {t.hero.description[1]}
+      </p>
+      <p class="network-highlight">
+        <span class="network-title"><Icon name="tabler:wifi" />{t.hero.networkTitle}</span>
+        <span class="network-note">{t.hero.networkNote}</span>
+      </p>
+      <div class="hero-actions">
+        <Button variant="primary" text={t.hero.download} href={product.download} icon="tabler:download" download />
+        <Button variant="secondary" text={t.hero.seeDemo} href="#demo" icon="tabler:arrow-down" />
+      </div>
+      <p class="release-line">
+        {'v' + product.version}<span>·</span> macOS {product.macOS}<span>·</span>{product.architecture}
+      </p>
+      <div id="demo" class="demo-anchor"><DesktopDemo text={t.demo} /></div>
+      <div class="hero-values">
+        {
+          t.hero.values.map((value) => (
+            <span>
+              <Icon name="tabler:check" /> {value}
+            </span>
+          ))
+        }
+      </div>
+    </section>
+    <div class="white-section">
+      <WidgetWrapper id="features" containerClass="site-width section-pad">
+        <div class="section-intro">
+          <p class="eyebrow">{t.features.eyebrow}</p>
+          <Headline title={t.features.title} classes={{ container: 'section-heading', title: 'section-title' }} />
+          <p>{t.features.description[0]}<br />{t.features.description[1]}</p>
+        </div>
+        <div class="features-grid">
+          {
+            t.features.cards.map((card) => (
+              <article>
+                <div class="feature-icon">
+                  <Icon name={card.icon} />
+                </div>
+                <>
+                  <h3>{card.title}</h3>
+                  <p>{card.body}</p>
+                  <span class="feature-detail">{card.detail}</span>
+                </>
+              </article>
+            ))
+          }
+        </div>
+      </WidgetWrapper>
+    </div>
+    <WidgetWrapper id="setup" containerClass="site-width section-pad setup-section">
+      <div class="setup-heading">
+        <p class="eyebrow">{t.setup.eyebrow}</p>
+        <Headline title={t.setup.title} classes={{ container: 'section-heading', title: 'section-title' }} />
+      </div>
+      <ol class="setup-steps">
+        {
+          t.setup.steps.map((step, index) => (
+            <li>
+              <span class="step-number">{String(index + 1).padStart(2, '0')}</span>
+              <div>
+                <>
+                  <h3>{step.title}</h3>
+                  <p set:html={step.body} />
+                </>
+              </div>
+            </li>
+          ))
+        }
+      </ol>
+      <details class="setup-permissions">
+        <summary><Icon name="tabler:info-circle" /> {t.setup.permissionsTitle}</summary>
+        <div>{t.setup.permissions.map((paragraph) => <p set:html={paragraph} />)}</div>
+      </details>
+    </WidgetWrapper>
+    <section id="source" class="download-section" aria-labelledby="download-title">
+      <div class="site-width download-inner">
+        <img
+          class="download-icon"
+          src={getAsset('/brand/macpair-icon.png')}
+          width="76"
+          height="76"
+          alt={t.download.iconAlt}
+          loading="lazy"
+        />
+        <p class="eyebrow">{t.download.eyebrow}</p>
+        <h2 id="download-title" set:html={t.download.title} />
+        <p class="download-description">{t.download.description[0]}<br />{t.download.description[1]}</p>
+        <Button
+          variant="primary"
+          text={t.download.get + ' ' + product.version}
+          href={product.download}
+          icon="tabler:download"
+          download
+        />
+        <p class="download-meta">
+          {(product.archiveBytes / 1_000_000).toFixed(1)} MB ZIP<span>·</span>{t.download.sameVersion}
+        </p>
+        <div class="source-links">
+          <a class="source-download" href={product.source} download>
+            <Icon name="tabler:code" />{t.download.source}<Icon name="tabler:arrow-up-right" />
+          </a>
+          <a class="source-download" href={product.github} target="_blank" rel="noopener noreferrer">
+            <Icon name="tabler:brand-github" />{t.download.github}<Icon name="tabler:arrow-up-right" />
+          </a>
+        </div>
+        <p class="source-note">{t.download.sourceNote[0]}<br />{t.download.sourceNote[1]}</p>
+        <details class="testing-notes">
+          <summary>{t.download.testingTitle} <Icon name="tabler:chevron-down" /></summary>
+          <div>{t.download.testing.map((paragraph) => <p>{paragraph}</p>)}</div>
+        </details>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer site-width">
+    <a class="brand footer-brand" href="#">
+      <img src={getAsset('/brand/macpair-icon.png')} width="25" height="25" alt="" /><span>MacPair</span>
+    </a>
+    <p>{t.footer.tagline}</p>
+    <div>
+      <a href={getAsset('/licenses/MacPair-GPL-3.0.txt')}>{t.footer.license}</a>
+      <a href="https://github.com/arthelokyo/astrowind" target="_blank" rel="noopener noreferrer">
+        {t.footer.credit}
+        <Icon name="tabler:arrow-up-right" />
+      </a>
+    </div>
+  </footer>
+  <dialog id="app-screenshots" aria-labelledby="screenshots-title">
+    <div class="dialog-heading">
+      <div><p class="eyebrow">MACPAIR {product.version}</p><h2 id="screenshots-title">{t.screenshots.title}</h2></div>
+      <form method="dialog">
+        <button class="dialog-close" aria-label={t.screenshots.close}><Icon name="tabler:x" /></button>
+      </form>
+    </div>
+    <p class="dialog-caption">{t.screenshots.caption}</p>
+    <div class="screenshots-grid">
+      <figure>
+        <figcaption>{t.screenshots.host}</figcaption>
+        <img
+          src={getAsset(t.screenshots.hostSrc)}
+          alt={t.screenshots.hostAlt}
+          width="1440"
+          height="1100"
+          loading="lazy"
+        />
+      </figure>
+      <figure>
+        <figcaption>{t.screenshots.display}</figcaption>
+        <img
+          src={getAsset(t.screenshots.displaySrc)}
+          alt={t.screenshots.displayAlt}
+          width="1440"
+          height="1100"
+          loading="lazy"
+        />
+      </figure>
+    </div>
+  </dialog>
+</Layout>
+<script>
+  const screenshotDialog = document.querySelector<HTMLDialogElement>('#app-screenshots');
+  document
+    .querySelector<HTMLButtonElement>('[data-open-app]')
+    ?.addEventListener('click', () => screenshotDialog?.showModal());
+  screenshotDialog?.addEventListener('click', (event) => {
+    if (event.target !== screenshotDialog) return;
+    const box = screenshotDialog.getBoundingClientRect();
+    if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom)
+      screenshotDialog.close();
+  });
+</script>

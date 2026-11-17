@@ -1,0 +1,32 @@
+site:
+  name: MacPair
+  site: 'https://catstats.github.io'
+  base: '/MacPair'
+  trailingSlash: true
+  googleSiteVerificationId: false
+metadata:
+  title:
+    default: 'MacPair — Two Macs. More room.'
+    template: '%s — MacPair'
+  description: 'Turn a nearby Mac into a wireless second display. Extend your desktop or mirror your main screen with a native, free macOS app.'
+  robots:
+    index: true
+    follow: true
+  openGraph:
+    site_name: MacPair
+    images: []
+    type: website
+  twitter:
+    cardType: summary_large_image
+i18n:
+  language: en
+  textDirection: ltr
+apps:
+  blog:
+    isEnabled: false
+analytics:
+  vendors:
+    googleAnalytics:
+      id: null
+ui:
+  theme: 'light:only'

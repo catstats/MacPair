@@ -1,0 +1,18 @@
+---
+import Layout from '~/layouts/Layout.astro';
+import Button from '~/components/ui/Button.astro';
+import { getAsset, getPermalink } from '~/utils/permalinks';
+---
+
+<Layout title="Page not found — MacPair"
+  ><main class="not-found">
+    <img src={getAsset('/brand/macpair-icon.png')} width="72" height="72" alt="MacPair" /><p class="eyebrow">404</p><h1>
+      A little off-screen.
+    </h1><p>This page isn't here. Let's get you back to your workspace.</p><Button
+      variant="primary"
+      href={getPermalink('/')}
+      text="Back to MacPair"
+    />
+    <a href={getPermalink('/zh/')} lang="zh-CN">返回 MacPair 中文首页</a>
+  </main></Layout
+>

@@ -1,0 +1,63 @@
+---
+import '~/assets/styles/tailwind.css';
+import '~/assets/styles/macpair.css';
+import { SITE, METADATA } from 'astrowind:config';
+import CommonMeta from '~/components/common/CommonMeta.astro';
+import CustomStyles from '~/components/CustomStyles.astro';
+import { copy, type Locale } from '~/data/copy';
+import { getAsset, getPermalink } from '~/utils/permalinks';
+interface Props {
+  title?: string;
+  description?: string;
+  locale?: Locale;
+  languageAlternates?: boolean;
+}
+const { title = METADATA.title?.default ?? 'MacPair — Two Macs. More room.', description = METADATA.description } =
+  Astro.props;
+const { locale = 'en', languageAlternates = false } = Astro.props;
+const t = copy[locale];
+const canonical = new URL(Astro.url.pathname, SITE.site).href;
+const shareImage = new URL(getAsset('/brand/macpair-wordmark.png'), SITE.site).href;
+---
+
+<!doctype html>
+<html lang={t.lang}>
+  <head>
+    <CommonMeta />
+    <CustomStyles />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="robots" content={METADATA.robots?.index === false ? 'noindex, follow' : 'index, follow'} />
+    <link rel="canonical" href={canonical} />
+    {
+      languageAlternates && (
+        <Fragment>
+          <link rel="alternate" hreflang="en" href={new URL(getPermalink('/'), SITE.site).href} />
+          <link rel="alternate" hreflang="zh-CN" href={new URL(getPermalink('/zh/'), SITE.site).href} />
+          <link rel="alternate" hreflang="x-default" href={new URL(getPermalink('/'), SITE.site).href} />
+        </Fragment>
+      )
+    }
+    <link rel="icon" type="image/png" href={getAsset('/favicon.png')} />
+    <link rel="apple-touch-icon" href={getAsset('/brand/macpair-icon.png')} />
+    <meta property="og:locale" content={t.ogLocale} />
+    {
+      languageAlternates && (
+        <meta property="og:locale:alternate" content={copy[locale === 'en' ? 'zh-CN' : 'en'].ogLocale} />
+      )
+    }
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="MacPair" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={shareImage} />
+    <meta property="og:image:alt" content={t.imageAlt} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <slot name="head" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">{t.skip}</a>
+    <slot />
+  </body>
+</html>

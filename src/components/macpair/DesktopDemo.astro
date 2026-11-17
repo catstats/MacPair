@@ -1,0 +1,203 @@
+---
+import { Icon } from 'astro-icon/components';
+import { getAsset } from '~/utils/permalinks';
+import type { copy } from '~/data/copy';
+interface Props {
+  text: (typeof copy)['en']['demo'];
+}
+const { text: t } = Astro.props;
+---
+
+<div
+  class="workspace-demo"
+  data-demo
+  data-mode="extend"
+  data-moved="false"
+  data-extend-status={t.extendStatus}
+  data-mirror-status={t.mirrorStatus}
+  data-moved-status={t.movedStatus}
+  data-extend-subtitle={t.extendSubtitle}
+  data-mirror-subtitle={t.mirrorSubtitle}
+  data-notes={t.notes}
+  data-move-label={t.move}
+  data-back-label={t.bringBack}
+>
+  <div class="demo-topline">
+    <div class="demo-tabs" role="tablist" aria-label={t.label}>
+      <button
+        id="tab-extend"
+        type="button"
+        role="tab"
+        aria-selected="true"
+        aria-controls="workspace-panel"
+        data-mode-button="extend">{t.extend}</button
+      >
+      <button
+        id="tab-mirror"
+        type="button"
+        role="tab"
+        aria-selected="false"
+        aria-controls="workspace-panel"
+        tabindex="-1"
+        data-mode-button="mirror">{t.mirror}</button
+      >
+    </div>
+    <span class="demo-connection"><span class="connection-dot"></span> {t.nearby}</span>
+  </div>
+  <div id="workspace-panel" class="device-pair" role="tabpanel" aria-labelledby="tab-extend">
+    <div class="device host-device">
+      <div class="device-screen">
+        <div class="desktop-menubar">
+          <Icon name="tabler:brand-apple" /><span>{t.notes}</span><span class="desktop-clock">9:41</span>
+        </div>
+        <div class="desktop-canvas host-canvas">
+          <div class="desktop-folder"><Icon name="tabler:folder" /><span>{t.projects}</span></div>
+          <div class="notes-window" data-window="host">
+            <div class="window-chrome"><span></span><span></span><span></span><p>{t.notes}</p></div>
+            <div class="notes-content">
+              <span class="notes-date">{t.focus}</span><h3>{t.ideas}</h3><p>
+                {t.lines[0]}<br />{t.lines[1]}<br />{t.lines[2]}
+              </p><div class="note-rule"></div><span class="note-footer">{t.noteFooter}</span>
+            </div>
+          </div>
+          <div class="desktop-dock">
+            <Icon name="tabler:compass" /><Icon name="tabler:folder" /><img
+              src={getAsset('/brand/macpair-icon.png')}
+              width="22"
+              height="22"
+              alt=""
+            /><Icon name="tabler:notes" />
+          </div>
+        </div>
+      </div>
+      <div class="device-base"></div>
+      <div class="device-label"><span>{t.host}</span><small>{t.hostSubtitle}</small></div>
+    </div>
+    <div class="wireless-bridge" aria-hidden="true"><Icon name="tabler:wifi" /><span>{t.wireless}</span></div>
+    <div class="device display-device">
+      <div class="device-screen">
+        <div class="desktop-menubar">
+          <Icon name="tabler:brand-apple" /><span data-display-app>MacPair</span><span class="desktop-clock">9:41</span>
+        </div>
+        <div class="desktop-canvas display-canvas">
+          <div class="extended-view">
+            <div class="empty-workspace">
+              <Icon name="tabler:layout-sidebar-right-expand" /><p>{t.spaceTitle}</p><span>{t.spaceSubtitle}</span>
+            </div>
+            <div class="notes-window" data-window="display">
+              <div class="window-chrome"><span></span><span></span><span></span><p>{t.notes}</p></div><div
+                class="notes-content"
+              >
+                <span class="notes-date">{t.focus}</span><h3>{t.ideas}</h3><p>
+                  {t.lines[0]}<br />{t.lines[1]}<br />{t.lines[2]}
+                </p><div class="note-rule"></div><span class="note-footer">{t.movedFooter}</span>
+              </div>
+            </div>
+          </div>
+          <div class="mirrored-view">
+            <div class="desktop-folder"><Icon name="tabler:folder" /><span>{t.projects}</span></div><div
+              class="notes-window"
+            >
+              <div class="window-chrome"><span></span><span></span><span></span><p>{t.notes}</p></div><div
+                class="notes-content"
+              >
+                <span class="notes-date">{t.focus}</span><h3>{t.ideas}</h3><p>
+                  {t.lines[0]}<br />{t.lines[1]}<br />{t.lines[2]}
+                </p><div class="note-rule"></div><span class="note-footer">{t.noteFooter}</span>
+              </div>
+            </div><div class="desktop-dock">
+              <Icon name="tabler:compass" /><Icon name="tabler:folder" /><img
+                src={getAsset('/brand/macpair-icon.png')}
+                width="22"
+                height="22"
+                alt=""
+              /><Icon name="tabler:notes" />
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="device-base"></div>
+      <div class="device-label">
+        <span>{t.display}</span><small data-device-subtitle>{t.extendSubtitle}</small>
+      </div>
+    </div>
+  </div>
+  <div class="demo-bottomline">
+    <p data-demo-status aria-live="polite">{t.extendStatus}</p>
+    <button type="button" class="demo-move" data-move
+      ><span data-move-text>{t.move}</span> <span data-move-arrow aria-hidden="true">→</span></button
+    >
+  </div>
+</div>
+<p class="demo-caption">
+  {t.caption}
+  <span>·</span>
+  <button type="button" data-open-app>{t.openApp} <Icon name="tabler:arrow-up-right" /></button>
+</p>
+<script>
+  const demo = document.querySelector<HTMLElement>('[data-demo]');
+  if (demo) {
+    const tabs = Array.from(demo.querySelectorAll<HTMLButtonElement>('[data-mode-button]'));
+    const move = demo.querySelector<HTMLButtonElement>('[data-move]');
+    const status = demo.querySelector<HTMLElement>('[data-demo-status]');
+    const moveText = demo.querySelector<HTMLElement>('[data-move-text]');
+    const moveArrow = demo.querySelector<HTMLElement>('[data-move-arrow]');
+    const messages = {
+      extendStatus: demo.dataset.extendStatus ?? '',
+      mirrorStatus: demo.dataset.mirrorStatus ?? '',
+      movedStatus: demo.dataset.movedStatus ?? '',
+      extendSubtitle: demo.dataset.extendSubtitle ?? '',
+      mirrorSubtitle: demo.dataset.mirrorSubtitle ?? '',
+      notes: demo.dataset.notes ?? '',
+      move: demo.dataset.moveLabel ?? '',
+      bringBack: demo.dataset.backLabel ?? '',
+    };
+    const subtitle = demo.querySelector<HTMLElement>('[data-device-subtitle]');
+    const displayApp = demo.querySelector<HTMLElement>('[data-display-app]');
+    const panel = demo.querySelector<HTMLElement>('[role="tabpanel"]');
+    function setMode(mode: string) {
+      if (!demo || !move || !moveText || !moveArrow || !status || !subtitle || !displayApp || !panel) return;
+      demo.dataset.mode = mode;
+      demo.dataset.moved = 'false';
+      tabs.forEach((tab) => {
+        const selected = tab.dataset.modeButton === mode;
+        tab.setAttribute('aria-selected', String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+      });
+      panel.setAttribute('aria-labelledby', `tab-${mode}`);
+      move.hidden = mode === 'mirror';
+      moveText.textContent = messages.move;
+      moveArrow.textContent = '→';
+      status.textContent = mode === 'mirror' ? messages.mirrorStatus : messages.extendStatus;
+      subtitle.textContent = mode === 'mirror' ? messages.mirrorSubtitle : messages.extendSubtitle;
+      displayApp.textContent = mode === 'mirror' ? messages.notes : 'MacPair';
+    }
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => setMode(tab.dataset.modeButton ?? 'extend'));
+      tab.addEventListener('keydown', (event) => {
+        const destination =
+          event.key === 'ArrowRight'
+            ? (index + 1) % tabs.length
+            : event.key === 'ArrowLeft'
+              ? (index + tabs.length - 1) % tabs.length
+              : event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                  ? tabs.length - 1
+                  : -1;
+        if (destination < 0) return;
+        event.preventDefault();
+        tabs[destination].focus();
+        setMode(tabs[destination].dataset.modeButton ?? 'extend');
+      });
+    });
+    move?.addEventListener('click', () => {
+      if (!status || !demo || !moveText || !moveArrow) return;
+      const moved = demo.dataset.moved !== 'true';
+      demo.dataset.moved = String(moved);
+      moveText.textContent = moved ? messages.bringBack : messages.move;
+      moveArrow.textContent = moved ? '←' : '→';
+      status.textContent = moved ? messages.movedStatus : messages.extendStatus;
+    });
+  }
+</script>
