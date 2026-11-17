@@ -2,5 +2,5 @@ build/
 .DS_Store
 *.log
 
-# Website has independent Git history and Sites deployment.
+# Local website checkout; public source and output use website-source / gh-pages branches.
 website/

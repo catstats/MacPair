@@ -4,7 +4,7 @@
 
 **Two Macs. More room.**
 
-[Download v0.1.9](https://github.com/catstats/MacPair/releases/tag/v0.1.9) · [Website](https://macpair-display.resourcefulflint.chatgpt.site/) · [简体中文](README.zh-CN.md)
+[Download v0.1.9](https://github.com/catstats/MacPair/releases/tag/v0.1.9) · [Website](https://catstats.github.io/MacPair/) · [简体中文](README.zh-CN.md)
 
 Turn a nearby Mac into a wireless second display. Extend your desktop or mirror your main screen, even when the two Macs are connected to different Wi-Fi networks. Keep both Macs nearby with Wi-Fi switched on.
 

@@ -4,7 +4,7 @@
 
 **两台 Mac，更多空间。**
 
-[下载 v0.1.9](https://github.com/catstats/MacPair/releases/tag/v0.1.9) · [中文官网](https://macpair-display.resourcefulflint.chatgpt.site/zh/) · [English](README.md)
+[下载 v0.1.9](https://github.com/catstats/MacPair/releases/tag/v0.1.9) · [中文官网](https://catstats.github.io/MacPair/zh/) · [English](README.md)
 
 **v0.1.9** · 默认英文；右上角齿轮 → Settings → Language 可切换「简体中文」。[English guide](README.md) · [中文测试指南](TESTING.zh-CN.md)
 

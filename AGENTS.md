@@ -10,6 +10,7 @@ MacPair is a native Swift macOS app. Its default UI language is English; Simplif
 - scripts/: build, test, preview, and packaging commands.
 - Vendor/PasswordExchange/: locally vendored Apple Swift Crypto/BoringSSL C source, built statically for both architectures.
 - build/: generated ZIP archives and preview images, ignored by Git.
+- Website: https://catstats.github.io/MacPair/; website-source and gh-pages branches of this repository contain its source and compiled site. The local website/ checkout is separate from the app.
 - iCloud checkouts keep generated app bundles/compiler caches under ~/Library/Caches/MacPair/<project-id> to preserve their signatures. scripts/project-paths.sh resolves all paths.
 
 ## Build and validate
