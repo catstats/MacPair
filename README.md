@@ -1,10 +1,20 @@
+<p align="center"><img src="Resources/Branding/MacPair%20Dual%20Monitor%20Logo.png" width="560" alt="MacPair"></p>
+
 # MacPair
 
-Extend your desktop onto a nearby Mac, or mirror your main screen. The user has confirmed that the two-Mac display works when the Macs are connected to different Wi-Fi networks.
+**Two Macs. More room.**
 
-**Prototype 0.1.9. English is the default; switch to 简体中文 from Settings → Language.** [中文说明](README.zh-CN.md)
+[Download v0.1.9](https://github.com/catstats/MacPair/releases/tag/v0.1.9) · [Website](https://macpair-display.resourcefulflint.chatgpt.site/) · [简体中文](README.zh-CN.md)
+
+Turn a nearby Mac into a wireless second display. Extend your desktop or mirror your main screen, even when the two Macs are connected to different Wi-Fi networks. Keep both Macs nearby with Wi-Fi switched on.
+
+**v0.1.9. English is the default; switch to 简体中文 from Settings → Language.** [中文说明](README.zh-CN.md)
 
 The local protocol, secure-pairing, H.264, and virtual-display checks have passed on the development Mac. **User report on 2026-11-16: virtual display and operation across different Wi-Fi networks passed. The user-described “no Wi-Fi” scenario did not work; whether the Wi-Fi radio was off or merely disconnected was not specified.** Standalone operation without an access point remains unconfirmed. See [test instructions and verification record](TESTING.md).
+
+![MacPair v0.1.9 Host Mac interface](Resources/Screenshots/host-en.png)
+
+*Interface rendered from the real app build; this is a component preview, not a live two-Mac recording.*
 
 ## Start here
 
@@ -32,7 +42,7 @@ After disconnecting, the main status says **Disconnected**. Previous RTT and fra
 
 ## Nearby connection cards
 
-Version 0.1.8 remembers the last Host Mac / Display Mac role. Opening the app starts discovery on a host and waiting on a display. Both apps must be running, and the second Mac must be in Display Mac mode. This uses the existing direct wireless discovery; it does not measure physical distance or use BLE.
+MacPair remembers the last Host Mac / Display Mac role. Opening the app starts discovery on a host and waiting on a display. Both apps must be running, and the second Mac must be in Display Mac mode. This uses the existing direct wireless discovery; it does not measure physical distance or use BLE.
 
 An available direct peer with a device identity can show a small app-owned card. Choose Extend or Mirror, then Connect. First-time peers still require the six-digit code; remembered peers use their saved Keychain credential. Discovery alone never authenticates a peer or starts screen sharing.
 
@@ -52,7 +62,7 @@ Use **0.1.9** on both Macs for video feedback and the 60 fps target. Protocol v3
 - Five failed pairing attempts share one global budget. The receiver stops waiting for 30 seconds, after which the user must explicitly start waiting again. Restarting the waiting session does not bypass that cooldown.
 - If Keychain access is denied, the current connection can still be encrypted, but the UI says it was not remembered. Half-saved first-pairing records are removed when the other Mac does not acknowledge storage.
 
-The short code is used with the existing **BoringSSL SPAKE2 password-authenticated key exchange**, not hashed directly into a TLS PSK. Mutual key confirmation gates all application data; independent AES-256-GCM keys and strict counters protect both directions. Every reconnect performs a fresh exchange using the stored strong credential. See [RFC 9257 §4.2](https://www.rfc-editor.org/rfc/rfc9257.html#section-4.2) for the distinction between low-entropy TLS PSKs and PAKE. This integration remains an experimental prototype without an independent security audit.
+The short code is used with the existing **BoringSSL SPAKE2 password-authenticated key exchange**, not hashed directly into a TLS PSK. Mutual key confirmation gates all application data; independent AES-256-GCM keys and strict counters protect both directions. Every reconnect performs a fresh exchange using the stored strong credential. See [RFC 9257 §4.2](https://www.rfc-editor.org/rfc/rfc9257.html#section-4.2) for the distinction between low-entropy TLS PSKs and PAKE. The pairing implementation has not undergone an independent security audit.
 
 ## Choose Mirror or Extend
 
@@ -79,7 +89,7 @@ Use **0.1.9** on both Macs; the sizing handshake uses protocol v3. Choose the re
 
 The receiver overlay shows the virtual desktop in points, its 1×/2× scale, the actual H.264 stream pixels and received FPS. Copy Diagnostics on either Mac for the receiver's screen/viewport dimensions and capture/encoder sizes. Disconnect and reconnect after changing the preset, the receiving screen or macOS display scaling. Exiting full screen keeps the negotiated resolution and fits it into the window.
 
-This prototype accepts up to 5120 pixels on either stream axis and 16 megapixels in total. Actual codec support depends on the Mac; choose Larger Text if the requested size is rejected. This limit is explicit, with no hidden fallback to the old 1280 × 800 desktop.
+MacPair accepts up to 5120 pixels on either stream axis and 16 megapixels in total. Actual codec support depends on the Mac; choose Larger Text if the requested size is rejected. This limit is explicit, with no hidden fallback to the old 1280 × 800 desktop.
 
 ## Then test the extended desktop
 
@@ -160,7 +170,7 @@ Extend-mode virtual-screen creation uses the **non-public CGVirtualDisplay API**
 
 Extend negotiates the receiver's logical screen size, backing pixels, scale and actual full-screen viewport before creating its virtual display. A Retina receiver gets a 2× HiDPI desktop and matching H.264 pixel dimensions. Default avoids an extra video resize when its measured viewport has even backing dimensions. Notched displays use the content area measured after full-screen entry. At 1×, odd dimensions round to the nearest even pixel for H.264. The viewer always preserves aspect ratio.
 
-Mirror retains its aspect-preserving 1280 × 800 capture limit and creates no virtual display. Both modes target up to 60 fps when both peers support video feedback; older peers retain 30 fps. Extend's encoder bitrate scales with resolution (8–45 Mbps); this is a resolution-based budget, not a congestion controller. Audio, display-side input, multiple receivers and automatic reconnection are outside this prototype.
+Mirror retains its aspect-preserving 1280 × 800 capture limit and creates no virtual display. Both modes target up to 60 fps when both peers support video feedback; older peers retain 30 fps. Extend's encoder bitrate scales with resolution (8–45 Mbps); this is a resolution-based budget, not a congestion controller. Audio, display-side input, multiple receivers and automatic reconnection are not supported in v0.1.9.
 
 ## Troubleshooting
 
@@ -172,6 +182,7 @@ Mirror retains its aspect-preserving 1280 × 800 capture limit and creates no vi
 | Connection test passes, extension fails | Grant host Screen Recording, quit/reopen, then check Diagnostics |
 | Frames arrive but no window is visible | Drag a normal window onto the new desktop; protected content may not be captured |
 | Window will not move to the display | Use Arrange displays to check the screen position |
+| Repeated Keychain prompts | For a MacPair saved-pairing item, choose Always Allow to retain access authorization. The current app can read its credentials more than once per session; this remains a known issue. |
 | Sleep interrupts the session | Wake both Macs and reconnect manually |
 | You need help | Copy Diagnostics on both Macs; it includes system version, interface, errors, and frame counts, but no pairing code |
 

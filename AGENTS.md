@@ -22,7 +22,7 @@ Keep local.macpair.prototype stable for macOS permission continuity. Mirror capt
 
 The user reported that the virtual display and use across two different Wi-Fi networks passed. Their described no-Wi-Fi case did not work; whether the radio was disabled or merely unassociated was not clarified. Do not label standalone no-access-point operation as verified. TESTING.md and TESTING.zh-CN.md contain the evidence and remaining checks.
 
-Use codex/ prefixes for feature branches. Keep generated build output out of commits. This repository has no configured remote yet.
+Use codex/ prefixes for feature branches. Keep generated build output out of commits. The public source repository is https://github.com/catstats/MacPair. Keep releases and source in sync.
 
 Six-digit pairing uses SPAKE2, never a PIN-derived TLS PSK. Device identities are obtained with Bonjour TXT records and are bound into the authenticated exchange. Strong remembered-device secrets live only in the local login Keychain; no PINs or session keys go in preferences, logs or diagnostics. Preserve mutual credential-storage acknowledgements, expiry, the global failure budget, code-free reconnects and Forget revocation. `./scripts/test.sh --pairing` covers the receiver lifecycle plus a temporary, scoped cross-process Keychain probe. Keep the ad-hoc-compatible login-Keychain API; data-protection access groups require provisioning this prototype does not have.
 

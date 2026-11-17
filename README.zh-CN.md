@@ -1,12 +1,22 @@
-# MacPair：两台 Mac 近距离无线扩展屏
+<p align="center"><img src="Resources/Branding/MacPair%20Dual%20Monitor%20Logo.png" width="560" alt="MacPair"></p>
 
-默认英文；右上角齿轮 → Settings → Language可切换「简体中文」。[English guide](README.md) · [中文测试指南](TESTING.zh-CN.md)
+# MacPair
 
-最小原生 macOS 原型。支持 Mirror（镜像主屏幕）和 Extend（创建真正的第二块桌面），另一台 Mac 接收画面。用户已确认两台 Mac 分别连接不同 Wi-Fi 时可用。
+**两台 Mac，更多空间。**
+
+[下载 v0.1.9](https://github.com/catstats/MacPair/releases/tag/v0.1.9) · [中文官网](https://macpair-display.resourcefulflint.chatgpt.site/zh/) · [English](README.md)
+
+**v0.1.9** · 默认英文；右上角齿轮 → Settings → Language 可切换「简体中文」。[English guide](README.md) · [中文测试指南](TESTING.zh-CN.md)
+
+原生 macOS 无线副屏 App。支持 Mirror（镜像主屏幕）和 Extend（扩展独立桌面）。两台 Mac 不必连接同一个 Wi-Fi；请让它们靠近，并保持 Wi-Fi 开关开启。
 
 **2026-11-16 用户实测反馈：虚拟屏和不同 Wi-Fi 下的双 Mac 副屏通过；用户所述“没有 Wi-Fi”的情况未通过。** 尚未明确该情况是关闭了 Wi-Fi 开关，还是开着无线但未连接任何网络，因此独立无接入点模式暂不记为通过。详见 [测试记录](TESTING.zh-CN.md)。
 
-## 打开原型
+![MacPair v0.1.9 中文主机界面](Resources/Screenshots/host-zh-Hans.png)
+
+*由真实 App 构建渲染的界面示例，并非双 Mac 实时投屏录像。*
+
+## 打开 MacPair
 
 双击项目根目录的「Start MacPair.command」即可启动。iCloud 项目的运行 App 与编译缓存保存在本机 ~/Library/Caches/MacPair/<项目编号>，启动器会自动定位；构建命令也会显示完整 App 路径。普通本地目录仍默认使用 build/MacPair.app。
 
@@ -18,7 +28,7 @@ App 使用本地临时签名，没有 Apple 公证。如果系统拦截自己构
 
 ## 自动发现与连接卡片
 
-0.1.8 会记住上次的主机／副屏角色。打开主机 App 自动搜索；打开副屏 App 自动等待。首次选择「这台是副屏」也会直接开始等待，无需再点搜索或等待按钮。两端仍需运行 MacPair，并保持 Wi-Fi 开启。
+MacPair 会记住上次的主机／副屏角色。打开主机 App 自动搜索；打开副屏 App 自动等待。首次选择「这台是副屏」也会直接开始等待，无需再点搜索或等待按钮。两端仍需运行 MacPair，并保持 Wi-Fi 开启。
 
 发现具备直连接口和设备身份的可用副屏后，会出现自己的原生连接卡片。选择镜像或扩展，点「连接」即可继续现有流程：首次仍需六位数字，已配对的 Mac 免输码。仅发现设备不会自动认证或开始屏幕传输。
 
@@ -38,7 +48,7 @@ App 使用本地临时签名，没有 Apple 公证。如果系统拦截自己构
 - 累计五次失败会暂停等待三十秒，之后需用户重新点击等待；重新开始等待不能绕过尚未结束的暂停。
 - 如果钥匙串访问失败，本次仍可加密连接，但界面会说明没有记住设备；另一端未确认保存时，会清理此次未完成的保存记录。
 
-短码使用现成的 **BoringSSL SPAKE2 密码认证密钥交换**，不会直接哈希成 TLS 密钥。相互验证后，使用独立的双向 AES-256-GCM 密钥与严格序号保护数据；免码连接也会用强设备凭据重新协商会话密钥。这仍是实验原型，尚未经过独立安全审计。
+短码使用现成的 **BoringSSL SPAKE2 密码认证密钥交换**，不会直接哈希成 TLS 密钥。相互验证后，使用独立的双向 AES-256-GCM 密钥与严格序号保护数据；免码连接也会用强设备凭据重新协商会话密钥。配对实现尚未经过独立安全审计。
 
 ## 选择镜像或扩展
 
@@ -63,7 +73,7 @@ Retina 副屏使用 2× HiDPI。例如 1280 × 832 逻辑点的全屏区域会�
 
 接收画面角落显示桌面逻辑点数、1×/2× 缩放、实际 H.264 像素和帧率。两端「复制诊断信息」还会包含副屏全屏区域、捕获及编码尺寸。更改分辨率档位、接收屏幕或 macOS 显示缩放后，请断开重连。退出全屏后仍保持协商的分辨率，画面缩放适应窗口。
 
-原型限制传输单边最大 5120 像素、总计约 1600 万像素，实际编码能力因机型而异。分辨率被拒绝时可改选「更大文字」。不会静默回退到旧版固定的 1280 × 800。
+当前传输限制为单边最大 5120 像素、总计约 1600 万像素，实际编码能力因机型而异。分辨率被拒绝时可改选「更大文字」。不会静默回退到旧版固定的 1280 × 800。
 
 ## 第一次连接
 
@@ -144,7 +154,7 @@ SPAKE2 → AES-GCM / TCP ─── AWDL 点对点 Wi-Fi ───→ 解码与�
   └────────────── 心跳 / RTT ────────────┘
 ```
 
-**CGVirtualDisplay 是 macOS 非公开接口。** 不需要安装驱动，但系统升级可能使它失效；这里不是承诺可以上架 App Store 或保证所有 Mac 兼容。接口异常由 Objective-C 桥接层处理，失败会报告给用户。原型不依赖 OpenDisplay 的完整应用、自动更新器或云端服务。
+**CGVirtualDisplay 是 macOS 非公开接口。** 不需要安装驱动，但系统升级可能使它失效；这里不是承诺可以上架 App Store 或保证所有 Mac 兼容。接口异常由 Objective-C 桥接层处理，失败会报告给用户。MacPair 不依赖 OpenDisplay 的完整应用、自动更新器或云端服务。
 
 无线发现受机型、系统权限、无线开关、无线环境及 AWDL 支持影响。首版保留严格接口选择，宁可报告无法发现，也不把局域网连接冒充成无需路由器的成功。
 
@@ -158,6 +168,7 @@ SPAKE2 → AES-GCM / TCP ─── AWDL 点对点 Wi-Fi ───→ 解码与�
 | 测试直连成功，扩展失败 | 检查主机屏幕录制权限；授权后退出并重开同一个 App；查看诊断错误 |
 | 画面黑但帧数增加 | 在主机把一个普通窗口拖到扩展桌面；受保护内容可能不被捕获 |
 | 窗口拖不进去 | 点“调整显示器排列”，查看 MacPair 所在方向 |
+| 钥匙串反复询问 | 对 MacPair 的已保存配对条目选择“始终允许”，可保留访问授权；当前 App 在同次使用中可能多次读取凭证，这是已知待优化项。 |
 | 睡眠后断开 | 本版检测超时并清理；唤醒后手动重新连接 |
 | 需要报告问题 | 两端点击“复制诊断信息”，保留系统版本、接口、错误、帧数；不包含配对码 |
 
@@ -184,6 +195,6 @@ git commit -m "Describe the change"
 - [Apple：includePeerToPeer](https://developer.apple.com/documentation/network/nwparameters/includepeertopeer)
 - [Apple：ScreenCaptureKit 示例](https://developer.apple.com/documentation/screencapturekit/capturing-screen-content-in-macos)
 - [OpenDisplay](https://github.com/peetzweg/opendisplay)：虚拟屏接口定义的来源，GPL-3.0。
-- [OpenAirDisplay](https://github.com/nmt3325/openairdisplay)：相关的 AWDL 方向工作；本原型没有克隆或依赖该分支。
+- [OpenAirDisplay](https://github.com/nmt3325/openairdisplay)：相关的 AWDL 方向工作；MacPair 未克隆或依赖该分支。
 
 本项目采用 GPL-3.0-only，完整条款见 LICENSE，第三方来源见 THIRD_PARTY_NOTICES.md。
