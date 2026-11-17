@@ -19,6 +19,17 @@ enum L10n {
         language == .english ? english : chinese[english] ?? english
     }
     private static let chinese: [String: String] = [
+        "This pairing could not be kept for this app session. Disconnect and pair again.": "未能在本次打开期间记住配对，请断开后重新配对。",
+        "Pairings stay in memory while both apps remain open. Reopening either app requires a new code.": "配对仅保存在内存中。保持两端 App 打开可免输码；重开任一端后需重新配对。",
+        "Session paired · No code needed": "本次已配对 · 无需输码",
+        "Session-paired Macs only": "仅限本次已配对的 Mac",
+        "Session-paired Macs can connect without a code. Choose New code to pair a new Mac.": "本次已配对的 Mac 无需输码；添加新 Mac 请点击「换一个码」。",
+        "Select this Mac on the host. Session-paired Macs need no code.": "在主机上选择这台 Mac，本次已配对的 Mac 无需输码。",
+        "Paired for this app session. Keep both apps open to reconnect without a code.": "已记住本次配对；保持两端 App 打开，重连时无需输码。",
+        "This connection is encrypted, but its pairing was not kept. Pair again to reconnect.": "本次连接已加密，但未记住配对；下次连接请重新配对。",
+        "Session pairings": "本次配对",
+        "No pairings in this app session.": "本次打开期间尚未配对。",
+        "Keep Wi-Fi on. Reopen either app to pair again.": "保持 Wi-Fi 开启；重开任一端 App 后需重新配对。",
         "Generated performance fixture": "生成的性能界面示例",
         "Capture": "捕获",
         "Encode": "编码",

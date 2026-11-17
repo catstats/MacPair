@@ -1,5 +1,13 @@
 # MacPair test guide
 
+## v0.1.10 — session memory instead of Keychain
+
+The current release removes all Keychain APIs from the pairing store and uses a fresh public identity for every app process. Reconnect without a code lasts only while both apps remain open. Old Keychain records are neither read nor deleted. The encrypted protocol and video implementation are unchanged.
+
+Acceptance: update both Macs, pair with six digits, disconnect/reconnect with both apps open, then quit/reopen either app. Its discovery identity must change and first pairing must require a new code. Repeat search, Settings and reconnect operations without any Keychain dialog. Forget must revoke the in-memory credential.
+
+Local checks passed on 2026-11-17: universal arm64/x86_64 build and strict signature; encrypted first pairing and in-process code-free reconnect; Forget, wrong-code/replay rejection and lockout; fresh-process empty store and changed identity; actual Bonjour discovery and nonactivating cards; real H.264 at three sizes and generated encrypted Retina video with delayed ACKs. The binary imports no SecItem or SecKeychain entry points. Physical two-Mac checks remain required; historical results below describe earlier versions.
+
 Version 0.1.1 adds a white highlight sweeping over the stationary gray searching label. The animation runs only while that label is visible and respects Reduce Motion. Search previews can be rendered with `./scripts/preview.sh --searching`; this UI update does not change the wireless protocol or video pipeline.
 
 [中文测试指南](TESTING.zh-CN.md) · [Quick start](README.md)

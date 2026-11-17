@@ -4,15 +4,15 @@
 
 **Two Macs. More room.**
 
-[Download v0.1.9](https://github.com/catstats/MacPair/releases/tag/v0.1.9) · [Website](https://catstats.github.io/MacPair/) · [简体中文](README.zh-CN.md)
+[Download v0.1.10](https://github.com/catstats/MacPair/releases/tag/v0.1.10) · [Website](https://catstats.github.io/MacPair/) · [简体中文](README.zh-CN.md)
 
 Turn a nearby Mac into a wireless second display. Extend your desktop or mirror your main screen, even when the two Macs are connected to different Wi-Fi networks. Keep both Macs nearby with Wi-Fi switched on.
 
-**v0.1.9. English is the default; switch to 简体中文 from Settings → Language.** [中文说明](README.zh-CN.md)
+**v0.1.10. English is the default; switch to 简体中文 from Settings → Language.** [中文说明](README.zh-CN.md)
 
 The local protocol, secure-pairing, H.264, and virtual-display checks have passed on the development Mac. **User report on 2026-11-16: virtual display and operation across different Wi-Fi networks passed. The user-described “no Wi-Fi” scenario did not work; whether the Wi-Fi radio was off or merely disconnected was not specified.** Standalone operation without an access point remains unconfirmed. See [test instructions and verification record](TESTING.md).
 
-![MacPair v0.1.9 Host Mac interface](Resources/Screenshots/host-en.png)
+![MacPair v0.1.10 Host Mac interface](Resources/Screenshots/host-en.png)
 
 *Interface rendered from the real app build; this is a component preview, not a live two-Mac recording.*
 
@@ -20,7 +20,7 @@ The local protocol, secure-pairing, H.264, and virtual-display checks have passe
 
 Double-click `Start MacPair.command`. In an iCloud checkout the runnable App is kept in this Mac's local cache; the launcher finds it automatically. Outside iCloud, the default App path is `build/MacPair.app`.
 
-To use a second Mac, copy `build/MacPair-0.1.9.zip` to it, unzip it, and open MacPair.app. The package includes the full source. The second Mac does not need Xcode.
+To use a second Mac, copy `build/MacPair-0.1.10.zip` to it, unzip it, and open MacPair.app. The package includes the full source. The second Mac does not need Xcode.
 
 Requirements: macOS 13 or later on both Macs, with compatible Apple peer-to-peer Wi-Fi hardware. The app is a universal arm64/x86_64 build. Both architectures have been compiled; the processor and OS versions of the user-tested pair were not separately recorded.
 
@@ -50,23 +50,22 @@ The card appears without activating MacPair or taking keyboard focus. A peer tha
 
 If the host still needs Screen Recording permission, Connect brings the main window forward with the existing permission instructions. No login item or always-running system service is installed. Automatic discovery is not automatic session reconnection.
 
-## Pair once; reconnect without typing
+## Session pairings — no Keychain
 
-Use **0.1.9** on both Macs for video feedback and the 60 fps target. Protocol v3, automatic roles and saved pairings from 0.1.6–0.1.8 remain compatible; older compatible peers negotiate the original 30 fps path.
+**Use v0.1.10 on both Macs to remove Keychain prompts.** Pairing credentials are kept only in the running app's memory. MacPair does not read, write or delete Keychain items, and does not save pairing secrets or codes to files or preferences.
 
-- A new Mac uses a uniformly random **six-digit numeric code**, including possible leading zeroes. It expires after **5 minutes** and is invalidated on successful authentication. Spaces or a hyphen are accepted when pasting.
-- After both Macs confirm the saved pairing, the app stores a **strong per-device credential in the local macOS login Keychain**. It never saves the six-digit code. The app does not synchronize these credentials through iCloud.
-- Next time, open the apps, keep the display Mac waiting, select it on the host, and click **Connect**. **No code is needed for a remembered Mac.** This also works after reopening the app, and when reversing the Macs' roles. It is a manual connection, not automatic sleep/reconnect recovery.
-- Expiring a short code leaves remembered Macs available. Choose **New code** only when adding a new Mac.
-- **Settings → Paired Macs → Forget**, available on either Mac while disconnected, removes its credential. The other Mac may also need to forget its stale saved entry before pairing again with a new code. A matching computer name alone never grants trust.
-- Five failed pairing attempts share one global budget. The receiver stops waiting for 30 seconds, after which the user must explicitly start waiting again. Restarting the waiting session does not bypass that cooldown.
-- If Keychain access is denied, the current connection can still be encrypted, but the UI says it was not remembered. Half-saved first-pairing records are removed when the other Mac does not acknowledge storage.
+- Enter a uniformly random **six-digit code** for a new app session. Leading zeroes are valid; codes expire after five minutes and are consumed after authentication.
+- Keep **both apps open** to disconnect and reconnect without entering another code. Switching Host / Display roles in the same running apps retains the session pairing.
+- Quitting or restarting either app clears that app's pairing and changes its public discovery identity. Enter the new six-digit code to pair again.
+- **Settings → Session pairings → Forget** removes a pairing from memory. Matching computer names never grant trust.
+- Five failed attempts pause waiting for 30 seconds. Restarting waiting does not bypass the current cooldown.
+- Earlier versions can still use the compatible protocol, but their own Keychain behavior remains. Update both Macs for the new experience.
 
-The short code is used with the existing **BoringSSL SPAKE2 password-authenticated key exchange**, not hashed directly into a TLS PSK. Mutual key confirmation gates all application data; independent AES-256-GCM keys and strict counters protect both directions. Every reconnect performs a fresh exchange using the stored strong credential. See [RFC 9257 §4.2](https://www.rfc-editor.org/rfc/rfc9257.html#section-4.2) for the distinction between low-entropy TLS PSKs and PAKE. The pairing implementation has not undergone an independent security audit.
+SPAKE2 mutual authentication and independent AES-256-GCM session keys are unchanged. Strong pairing credentials stay in memory; reconnects still perform a fresh authenticated exchange. The pairing implementation has not undergone an independent security audit. Old Keychain items are left untouched and are not used by v0.1.10.
 
 ## Choose Mirror or Extend
 
-Use **0.1.9 on both Macs**. On the host, choose the mode before starting:
+Use **0.1.10 on both Macs**. On the host, choose the mode before starting:
 
 | Mode | What the display Mac shows | Start button |
 | --- | --- | --- |
@@ -79,7 +78,7 @@ Mirror uses ScreenCaptureKit to capture the existing main display. It does not c
 
 ## Display resolution (Extend)
 
-Use **0.1.9** on both Macs; the sizing handshake uses protocol v3. Choose the resolution on the host before connecting:
+Use **0.1.10** on both Macs; the sizing handshake uses protocol v3. Choose the resolution on the host before connecting:
 
 | Setting | Desktop space | Text size on the receiver |
 | --- | --- | --- |
@@ -118,7 +117,9 @@ The diagnostic panel shows Network.framework's interface report. Combine that wi
 
 Round-trip time is a network heartbeat measurement, not end-to-end display latency. The new video path targets up to 60 fps (30 fps with older peers); actual speed and range must be measured on two Macs. A static desktop may show 0 new fps because ScreenCaptureKit emits no changed frames.
 
-## Video responsiveness (0.1.9)
+## Video responsiveness
+
+The video implementation is unchanged from v0.1.9.
 
 The actual pipeline is ScreenCaptureKit → VideoToolbox H.264 → authenticated encrypted TCP over AWDL → AVSampleBufferDisplayLayer. The system layer handles decoding and presentation; this app does not implement its own Metal renderer or HEVC codec.
 
@@ -130,7 +131,7 @@ The actual pipeline is ScreenCaptureKit → VideoToolbox H.264 → authenticated
 
 In **Diagnostics**, compare capture/encode/send/ACK update rates, encoder mean/p95, raw wait, local send completion, and receiver queue/sample/render-submission wait. “Callback → receiver submit → ACK” uses one sender clock and includes the return path. It is not one-way network latency or motion-to-photon latency. Reported FPS counts video updates/submissions, not panel refreshes; a still desktop can produce few new frames.
 
-For a meaningful physical test, install 0.1.9 on both Macs, keep the same resolution preset, and drag a window / scroll continuously for 10–15 seconds. Copy Diagnostics on **both** Macs if it still feels delayed. Look for which rate falls and which stage's p95 grows. Actual wireless smoothness still needs measurement on the two Macs.
+For a meaningful physical test, install 0.1.10 on both Macs, keep the same resolution preset, and drag a window / scroll continuously for 10–15 seconds. Copy Diagnostics on **both** Macs if it still feels delayed. Look for which rate falls and which stage's p95 grows. Actual wireless smoothness still needs measurement on the two Macs.
 
 ## Build and check
 
@@ -140,7 +141,7 @@ No network-fetched packages, cloud services, or paid developer account are neede
 ./scripts/build.sh             # universal arm64 + x86_64 app
 ./scripts/build.sh --native    # faster, current architecture only
 ./scripts/test.sh              # real local secure-pairing and H.264 checks
-./scripts/test.sh --pairing    # remembered reconnect, Forget, expiry/lockout and scoped Keychain checks
+./scripts/test.sh --pairing    # session reconnect, Forget, expiry/lockout and fresh-process isolation
 ./scripts/test.sh --discovery  # also checks automatic roles and the nonactivating native card
 ./scripts/test.sh --video      # encrypted generated Retina video + delayed-ACK backpressure
 ./scripts/test.sh --display    # real 1×/2× displays + temporary fullscreen sizing check
@@ -170,7 +171,7 @@ Extend-mode virtual-screen creation uses the **non-public CGVirtualDisplay API**
 
 Extend negotiates the receiver's logical screen size, backing pixels, scale and actual full-screen viewport before creating its virtual display. A Retina receiver gets a 2× HiDPI desktop and matching H.264 pixel dimensions. Default avoids an extra video resize when its measured viewport has even backing dimensions. Notched displays use the content area measured after full-screen entry. At 1×, odd dimensions round to the nearest even pixel for H.264. The viewer always preserves aspect ratio.
 
-Mirror retains its aspect-preserving 1280 × 800 capture limit and creates no virtual display. Both modes target up to 60 fps when both peers support video feedback; older peers retain 30 fps. Extend's encoder bitrate scales with resolution (8–45 Mbps); this is a resolution-based budget, not a congestion controller. Audio, display-side input, multiple receivers and automatic reconnection are not supported in v0.1.9.
+Mirror retains its aspect-preserving 1280 × 800 capture limit and creates no virtual display. Both modes target up to 60 fps when both peers support video feedback; older peers retain 30 fps. Extend's encoder bitrate scales with resolution (8–45 Mbps); this is a resolution-based budget, not a congestion controller. Audio, display-side input, multiple receivers and automatic reconnection are not supported in v0.1.10.
 
 ## Troubleshooting
 
@@ -182,7 +183,7 @@ Mirror retains its aspect-preserving 1280 × 800 capture limit and creates no vi
 | Connection test passes, extension fails | Grant host Screen Recording, quit/reopen, then check Diagnostics |
 | Frames arrive but no window is visible | Drag a normal window onto the new desktop; protected content may not be captured |
 | Window will not move to the display | Use Arrange displays to check the screen position |
-| Repeated Keychain prompts | For a MacPair saved-pairing item, choose Always Allow to retain access authorization. The current app can read its credentials more than once per session; this remains a known issue. |
+| A Keychain dialog appears | Quit the older MacPair instance and install v0.1.10 on both Macs. The new app uses session memory instead of Keychain. |
 | Sleep interrupts the session | Wake both Macs and reconnect manually |
 | You need help | Copy Diagnostics on both Macs; it includes system version, interface, errors, and frame counts, but no pairing code |
 

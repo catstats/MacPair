@@ -60,7 +60,7 @@ struct NearbyDisplayCard: View {
                 ForEach(DisplayMode.allCases) { Text(L10n.text($0.title)).tag($0) }
             }.pickerStyle(.menu)
             if remembered {
-                Label(L("Paired · No code needed"), systemImage: "lock.fill").font(.caption)
+                Label(L("Session paired · No code needed"), systemImage: "lock.fill").font(.caption)
             } else {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(L("Pairing code")).font(.caption).foregroundStyle(.secondary)

@@ -12,7 +12,7 @@ fi
 
 if [[ "${1:-}" == "--pairing" || "${1:-}" == "--discovery" ]]; then
     "$app_binary" --pairing-smoke-test
-    "$app_binary" --keychain-smoke-test
+    "$app_binary" --session-trust-smoke-test
 fi
 
 if [[ "${1:-}" == "--discovery" ]]; then

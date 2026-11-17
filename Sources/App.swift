@@ -29,7 +29,7 @@ struct MainView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(alignment: .firstTextBaseline, spacing: 9) {
                             Text("MacPair").font(.title2.bold())
-                            Text("v0.1.9").font(.caption).foregroundStyle(.secondary)
+                            Text("v0.1.10").font(.caption).foregroundStyle(.secondary)
                         }
                         Text(L("Your nearby Mac. Your second display.")).font(.caption).foregroundStyle(.secondary)
                     }
@@ -64,7 +64,7 @@ struct MainView: View {
                     }
                 }
                 if model.connected, !model.rememberedSession {
-                    Text(L("This session could not be remembered. Allow Keychain access and pair again to skip codes next time."))
+                    Text(L("This pairing could not be kept for this app session. Disconnect and pair again."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 DisclosureGroup(L("Diagnostics"), isExpanded: $diagnosticsExpanded) {
@@ -93,7 +93,7 @@ struct MainView: View {
                         Button(L("Copy diagnostics")) { model.copyDiagnostics() }.padding(.top, 4)
                     }.padding(.top, 7).frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Text(L("Keep Wi-Fi on on both Macs.")).font(.caption).foregroundStyle(.secondary)
+                Text(L("Keep Wi-Fi on. Reopen either app to pair again.")).font(.caption).foregroundStyle(.secondary)
             }.padding(22).frame(maxWidth: .infinity, alignment: .topLeading)
         }.frame(minWidth: 660, minHeight: 510)
     }
@@ -110,9 +110,9 @@ struct MainView: View {
             Text(L("Show a connection card when an available display is found."))
                 .font(.caption).foregroundStyle(.secondary)
             Divider()
-            Text(L("Paired Macs")).font(.headline)
+            Text(L("Session pairings")).font(.headline)
             if model.trustedDevices.isEmpty {
-                Text(L("No saved pairings yet.")).font(.callout).foregroundStyle(.secondary)
+                Text(L("No pairings in this app session.")).font(.callout).foregroundStyle(.secondary)
             } else {
                 ScrollView {
                     VStack(spacing: 10) {
@@ -126,7 +126,7 @@ struct MainView: View {
                     }
                 }.frame(maxHeight: 150)
             }
-            Text(L("Pair once with six digits. Remembered Macs need no code."))
+            Text(L("Pairings stay in memory while both apps remain open. Reopening either app requires a new code."))
                 .font(.caption).foregroundStyle(.secondary)
         }.padding(20).frame(width: 340)
     }
@@ -206,7 +206,7 @@ struct MainView: View {
                                                 Text(peer.name).lineLimit(1)
                                                 if model.isTrusted(peer) {
                                                     Image(systemName: "lock.fill").foregroundStyle(.blue)
-                                                        .accessibilityLabel(L("Paired · No code needed"))
+                                                        .accessibilityLabel(L("Session paired · No code needed"))
                                                 }
                                             }
                                             Text(L(peer.isDirect ? "Ready to connect" : "Waiting for direct Wi-Fi…"))
@@ -225,7 +225,7 @@ struct MainView: View {
                 HStack(alignment: .bottom, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
                         if model.selectedPeerIsTrusted {
-                            Label(L("Paired · No code needed"), systemImage: "lock.fill").font(.callout)
+                            Label(L("Session paired · No code needed"), systemImage: "lock.fill").font(.callout)
                                 .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
                         } else {
                             Text(L("Pairing code")).font(.caption).foregroundStyle(.secondary)
@@ -259,7 +259,7 @@ struct MainView: View {
                     Text(L("Pairing code")).font(.caption).foregroundStyle(.secondary)
                     HStack {
                         if model.pairingCode.isEmpty {
-                            Label(L("Paired Macs only"), systemImage: "lock.fill").font(.callout)
+                            Label(L("Session-paired Macs only"), systemImage: "lock.fill").font(.callout)
                         } else {
                             Text(model.pairingCode).font(.system(size: 32, weight: .semibold, design: .monospaced)).tracking(4)
                                 .textSelection(.enabled).accessibilityLabel(L("Pairing code"))
@@ -269,7 +269,7 @@ struct MainView: View {
                         Button(L("Stop waiting")) { model.stopAll() }.disabled(model.cleaning)
                     }
                     Text(L(model.pairingCode.isEmpty
-                        ? "Paired Macs can connect without a code. Choose New code to pair a new Mac."
+                        ? "Session-paired Macs can connect without a code. Choose New code to pair a new Mac."
                         : "Valid for 5 minutes. Enter it on the host for first pairing only."))
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(14).background(.blue.opacity(0.07), in: RoundedRectangle(cornerRadius: 9))

@@ -67,7 +67,7 @@ enum Preview {
                     continue
                 }
                 for receiver in ((searching || mirrorMode || disconnected || diagnostics || metrics) ? [false] : [false, true]) {
-                    let model = AppModel(trustStore: TrustStore(memoryOnly: true), identity: PeerIdentity(id: "00000000-0000-0000-0000-000000000001", name: "Preview Mac"))
+                    let model = AppModel(trustStore: TrustStore(), identity: PeerIdentity(id: "00000000-0000-0000-0000-000000000001", name: "Preview Mac"))
                     model.language = language
                     if mirrorMode { model.displayMode = .mirror }
                     if !receiver && !disconnected {
@@ -102,7 +102,7 @@ enum Preview {
                         model.role = .receiver
                         model.listening = true
                         model.pairingCode = "024681"
-                        model.status = "Select this Mac on the host. Paired Macs need no code."
+                        model.status = "Select this Mac on the host. Session-paired Macs need no code."
                     }
                     let hosting = NSHostingView(rootView: MainView(model: model, diagnosticsExpanded: diagnostics || metrics)
                         .environment(\.colorScheme, searching ? .dark : .light)

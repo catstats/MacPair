@@ -337,7 +337,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
                     switch state {
                     case .ready:
                         self.listening = true
-                        self.status = "Select this Mac on the host. Paired Macs need no code."
+                        self.status = "Select this Mac on the host. Session-paired Macs need no code."
                         self.log("Display advertising via Bonjour with peer-to-peer Wi-Fi enabled")
                     case .failed(let error):
                         self.stopAll(reason: "Listener failed: \(error.localizedDescription)")
@@ -551,8 +551,8 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
             rememberedSession = localTrustSaved && peerSaved
             trustConfirmed = rememberedSession
             reloadTrustedDevices()
-            log(rememberedSession ? "This Mac is remembered. Future connections need no code."
-                : "Connected for this session only. Pair again after allowing Keychain access to remember this Mac.")
+            log(rememberedSession ? "Paired for this app session. Keep both apps open to reconnect without a code."
+                : "This connection is encrypted, but its pairing was not kept. Pair again to reconnect.")
             if role == .host, let requestedHello {
                 link.send(.hello, try JSONEncoder().encode(requestedHello))
             }
@@ -943,7 +943,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         updateViewerHUD()
     }
     func copyDiagnostics() {
-        var details = ["MacPair 0.1.9", ProcessInfo.processInfo.operatingSystemVersionString,
+        var details = ["MacPair 0.1.10", ProcessInfo.processInfo.operatingSystemVersionString,
             L10n.text(role.rawValue), connectionTitle.localized, status.localized, path.localized]
         if connected { details.append("Live: RTT \(rtt), frames \(totalFrames), fps \(fps)"); details.append(videoPerformance) }
         if let previous = lastSession {

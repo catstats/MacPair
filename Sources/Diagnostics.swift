@@ -298,7 +298,7 @@ enum DiagnosticTests {
         try expect(gate.issue(at: 437) && gate.failures == 0, "Cooldown did not expire")
         gate.consume()
         try expect(!gate.accepts(at: 438), "A successfully used code stayed valid")
-        let store = TrustStore(memoryOnly: true)
+        let store = TrustStore()
         let peer = PeerIdentity(id: UUID().uuidString, name: "Fixture Mac")
         let fixture = TrustedDevice(id: String(repeating: "a", count: 32), peer: peer,
             secret: Data(repeating: 42, count: 32), createdAt: Date())
@@ -306,7 +306,7 @@ enum DiagnosticTests {
         let loaded = try store.credential(forPeer: peer.id)
         try expect(loaded?.secret == fixture.secret, "Trusted-device storage failed")
         let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(fixture)) as! [String: Any]
-        try expect(json["code"] == nil && json["pin"] == nil, "A PIN was included in the persisted credential")
+        try expect(json["code"] == nil && json["pin"] == nil, "A PIN was included in the encoded credential")
         try store.forgetPeer(peer.id)
         let forgotten = try store.credential(id: fixture.id)
         try expect(forgotten == nil, "Forgetting did not remove the pairing secret")
@@ -362,7 +362,7 @@ enum DiagnosticTests {
         let hostIdentity = PeerIdentity(id: "00000000-0000-0000-0000-000000000001", name: "Test host")
         let displayIdentity = PeerIdentity(id: "00000000-0000-0000-0000-000000000002", name: "Test display")
         let payload = Data((0..<(512 * 1024)).map { UInt8($0 % 251) })
-        let receiverTrust = TrustStore(memoryOnly: true)
+        let receiverTrust = TrustStore()
         let listener = try NWListener(using: PeerNetwork.parameters(), on: .any)
         var accepted: [PeerLink] = []
         var receivedCorrectly = false
@@ -402,7 +402,7 @@ enum DiagnosticTests {
         guard let saved = client.authenticatedCredential else { throw PairError.message("No saved pairing material") }
         try saved.validate()
         try expect(saved.peer.id == displayIdentity.id && saved.secret.count == 32, "Saved pairing was not bound to its peer")
-        let hostTrust = TrustStore(memoryOnly: true)
+        let hostTrust = TrustStore()
         try hostTrust.save(saved)
         let impostor = PeerIdentity(id: UUID().uuidString, name: displayIdentity.name)
         let wrongNameLookup = try hostTrust.credential(forPeer: impostor.id)
@@ -537,7 +537,7 @@ enum DiagnosticTests {
         Task { @MainActor in
             let hostID = PeerIdentity(id: UUID().uuidString, name: "Test main Mac")
             let displayID = PeerIdentity(id: UUID().uuidString, name: "Test display Mac")
-            let hostStore = TrustStore(memoryOnly: true), displayStore = TrustStore(memoryOnly: true)
+            let hostStore = TrustStore(), displayStore = TrustStore()
             let preferenceSuite = "local.macpair.prototype.test.discovery." + UUID().uuidString
             let preferences = UserDefaults(suiteName: preferenceSuite)!
             defer { preferences.removePersistentDomain(forName: preferenceSuite) }
@@ -605,10 +605,10 @@ enum DiagnosticTests {
                 model.stopAll()
                 try await waitFor({ !model.occupied }, "First receiver did not stop")
 
-                // Simulate reopening the app with the same persistent credential store.
+                // Recreate the view model while the same app process and memory store remain open.
                 model = AppModel(trustStore: displayStore, identity: displayID)
                 model.role = .receiver
-                try expect(model.trustedDevices.count == 1, "Paired device was lost across app-model restart")
+                try expect(model.trustedDevices.count == 1, "Session pairing was lost while recreating the view model")
                 model.listen()
                 try await waitFor({ model.listening }, "Restarted receiver did not start")
                 model.expirePairingCode()
@@ -647,9 +647,9 @@ enum DiagnosticTests {
                 model.listen()
                 try expect(!model.listening, "Wait for connection bypassed cooldown")
                 model.stopAll()
-                print("PASS: actual AppModel first pairing, one-time code, restart without PIN, Forget revocation and five-attempt cooldown")
+                print("PASS: actual AppModel first pairing, one-time code, in-process reconnect, Forget revocation and five-attempt cooldown")
 
-                let oneShotStore = TrustStore(memoryOnly: true)
+                let oneShotStore = TrustStore()
                 model = AppModel(trustStore: oneShotStore, identity: displayID)
                 model.role = .receiver
                 model.listen()
@@ -664,7 +664,7 @@ enum DiagnosticTests {
                 print("PASS: declined/failed credential saving keeps the session encrypted and removes half-saved trust")
 
                 preferences.set(MacRole.host.rawValue, forKey: "MacPairRole")
-                model = AppModel(trustStore: TrustStore(memoryOnly: true), identity: hostID, preferences: preferences)
+                model = AppModel(trustStore: TrustStore(), identity: hostID, preferences: preferences)
                 model.startAutomaticBehavior()
                 try await waitFor({ model.browsing }, "Host did not start discovery automatically")
                 model.automaticDiscovery = false
@@ -672,7 +672,7 @@ enum DiagnosticTests {
                 try expect(!model.browsing && model.suggestedDeviceID == nil, "Discovery opt-out left browsing/cards active")
                 model.stopAll()
                 try await waitFor({ !model.occupied }, "Host did not finish stopping")
-                model = AppModel(trustStore: TrustStore(memoryOnly: true), identity: hostID, preferences: preferences)
+                model = AppModel(trustStore: TrustStore(), identity: hostID, preferences: preferences)
                 try expect(!model.automaticDiscovery && model.role == .host, "Role/discovery preferences were not restored")
                 model.startAutomaticBehavior()
                 try await waitFor({ !model.occupied }, "Opted-out host did not finish startup")
@@ -700,47 +700,45 @@ enum DiagnosticTests {
         exit(1)
     }
 
-    static func keychainReadProbe() -> Never {
+    static func sessionTrustProbe() -> Never {
         do {
             let args = CommandLine.arguments
-            guard args.count == 5, args[2].hasPrefix("local.macpair.prototype.test."),
-                  UUID(uuidString: String(args[2].dropFirst("local.macpair.prototype.test.".count))) != nil else {
-                throw PairError.message("Invalid scoped Keychain probe")
+            guard args.count == 3, UUID(uuidString: args[2]) != nil else {
+                throw PairError.message("Invalid session-pairing probe")
             }
-            let record = try TrustStore(service: args[2]).credential(id: args[3])
-            try expect(record?.peer.id == args[4] && record?.secret == Data(repeating: 0x73, count: 32),
-                "A second process could not read the persisted test credential")
-            print("PASS: a fresh MacPair process read the scoped persisted credential")
+            let fresh = try TrustStore().all()
+            try expect(fresh.isEmpty, "A fresh process inherited a pairing")
+            try expect(PeerIdentity.local().id != args[2], "Device identity survived app relaunch")
+            try expect(PeerIdentity.local() == PeerIdentity.local(), "Identity changed within one process")
+            print("PASS: a fresh process has no pairing and a fresh public identity")
             exit(0)
         } catch { fputs("FAIL: \(error.localizedDescription)\n", stderr); exit(1) }
     }
 
-    static func keychainSmokeTest() -> Never {
+    static func sessionTrustSmokeTest() -> Never {
         do {
-            let namespace = "local.macpair.prototype.test." + UUID().uuidString
-            let store = TrustStore(service: namespace)
-            let record = TrustedDevice(id: String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()),
-                peer: PeerIdentity(id: UUID().uuidString, name: "Temporary MacPair test"),
-                secret: Data(repeating: 0x73, count: 32), createdAt: Date())
-            defer { try? store.forget(id: record.id) }
+            let store = TrustStore()
+            let peer = PeerIdentity(id: UUID().uuidString, name: "Session fixture")
+            let record = TrustedDevice(id: String(repeating: "c", count: 32), peer: peer,
+                secret: Data(repeating: 0xa5, count: 32), createdAt: Date())
             try store.save(record)
-            let loaded = try store.credential(forPeer: record.peer.id)
-            try expect(loaded?.secret == record.secret && loaded?.id == record.id, "Real Keychain roundtrip failed")
+            let loaded = try store.credential(forPeer: peer.id)
+            try expect(loaded?.secret == record.secret,
+                "An open app lost its session pairing")
+            let fresh = try TrustStore().all()
+            try expect(fresh.isEmpty, "A new store inherited another store's pairing")
             let child = Process()
-            child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-            child.arguments = ["--keychain-read-probe", namespace, record.id, record.peer.id]
-            let finished = DispatchSemaphore(value: 0)
-            child.terminationHandler = { _ in finished.signal() }
+            child.executableURL = Bundle.main.executableURL!
+            child.arguments = ["--session-trust-probe", PeerIdentity.local().id]
             try child.run()
-            guard finished.wait(timeout: .now() + 8) == .success else {
-                child.terminate()
-                throw PairError.message("Keychain persistence probe timed out")
-            }
-            try expect(child.terminationStatus == 0, "Persisted credential was not available after process restart")
-            try store.forget(id: record.id)
-            let removed = try store.credential(id: record.id)
-            try expect(removed == nil, "Temporary Keychain record was not deleted")
-            print("PASS: scoped real macOS Keychain save/read/remove; no user pairing records accessed")
+            let deadline = Date().addingTimeInterval(10)
+            while child.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+            if child.isRunning { child.terminate(); throw PairError.message("Session isolation probe timed out") }
+            try expect(child.terminationStatus == 0, "A fresh app process retained pairing state")
+            try store.forgetPeer(peer.id)
+            let remaining = try store.all()
+            try expect(remaining.isEmpty, "Forget retained the session credential")
+            print("PASS: session memory, fresh-process isolation and Forget; no Keychain access")
             exit(0)
         } catch { fputs("FAIL: \(error.localizedDescription)\n", stderr); exit(1) }
     }
@@ -859,8 +857,8 @@ enum MacPairLauncher {
         if CommandLine.arguments.contains("--self-test") { DiagnosticTests.run() }
         if CommandLine.arguments.contains("--display-smoke-test") { DiagnosticTests.displaySmokeTest() }
         if CommandLine.arguments.contains("--pairing-smoke-test") { DiagnosticTests.pairingSmokeTest() }
-        if CommandLine.arguments.contains("--keychain-read-probe") { DiagnosticTests.keychainReadProbe() }
-        if CommandLine.arguments.contains("--keychain-smoke-test") { DiagnosticTests.keychainSmokeTest() }
+        if CommandLine.arguments.contains("--session-trust-probe") { DiagnosticTests.sessionTrustProbe() }
+        if CommandLine.arguments.contains("--session-trust-smoke-test") { DiagnosticTests.sessionTrustSmokeTest() }
         if CommandLine.arguments.contains("--nearby-panel-smoke-test") { DiagnosticTests.nearbyPanelSmokeTest() }
         if CommandLine.arguments.contains("--receiver-smoke-test") { DiagnosticTests.receiverSmokeTest() }
         if CommandLine.arguments.contains("--mirror-smoke-test") { MirrorCaptureCheck.run() }
